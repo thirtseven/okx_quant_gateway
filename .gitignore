@@ -66,6 +66,7 @@ data/gateway_state.json
 
 # Logs
 *.log
+/tmp/
 
 # Test files
 .pytest_cache/
