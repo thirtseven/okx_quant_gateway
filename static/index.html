@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>OKX 量化网关</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div class="logo">OKX<span>/</span>量化 <span style="font-weight:300;font-size:11px;margin-left:8px;color:var(--muted)">本地网关 {{ version }}</span></div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <a href="/gateway-ui" target="_blank" style="color:var(--accent3);text-decoration:none;font-family:var(--mono);font-size:11px;padding:4px 10px;border:1px solid var(--accent2);border-radius:3px;" title="打开 Gateway UI (新标签页)">Gateway UI ▸</a>
+    <div class="status-pill"><div class="dot live" id="dot-live"></div><span id="live-label">运行中</span></div>
+    <div class="status-pill" style="color:var(--text2);"><span id="clock">--:--:--</span></div>
+    <div id="mode-indicator" class="tag" style="font-size:10px;">安全模式</div>
+    <div id="data-timing" class="status-pill" style="color:var(--muted);font-size:10px;"></div>
+    <div class="status-pill" style="color:var(--accent2);font-size:10px;" id="countdown-timer">指标倒计时: --s</div>
+  </div>
+</header>
+<div class="main">
+<nav class="sidebar">
+  <div class="nav-section">控制台</div>
+  <a class="nav-item active" data-page="overview" onclick="showPage('overview');return false;" href="javascript:void(0);">概览</a>
+  <a class="nav-item" data-page="prices" onclick="showPage('prices');return false;" href="javascript:void(0);">实时价格</a>
+  <div class="nav-section">策略</div>
+  <a class="nav-item" data-page="pairs" onclick="showPage('pairs');return false;" href="javascript:void(0);">交易对</a>
+  <a class="nav-item" data-page="log" onclick="showPage('log');return false;" href="javascript:void(0);">信号日志</a>
+  <a class="nav-item" data-page="positions" onclick="showPage('positions');return false;" href="javascript:void(0);">持仓</a>
+
+  <div class="nav-section">配置</div>
+  <a class="nav-item" data-page="settings" onclick="showPage('settings');return false;" href="javascript:void(0);">模式设置</a>
+  <a class="nav-item" data-page="instruments" onclick="showPage('instruments');return false;" href="javascript:void(0);">浏览交易对</a>
+  <a class="nav-item" data-page="signals" onclick="showPage('signals');return false;" href="javascript:void(0);">信号阈值</a>
+  <a class="nav-item" href="/settings" style="color:var(--yellow);">系统设置</a>
+  <a class="nav-item" href="/gateway-ui" target="_blank" style="color:var(--accent3);">Gateway UI ▸</a>
+</nav>
+<main class="content">
+<div class="error-banner" id="error-banner"></div>
+<div class="alert" id="global-alert"></div>
+
+<!-- OVERVIEW -->
+<div class="page active" id="page-overview">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">控制台</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">实时量化交易控制</div>
+  </div>
+  <div class="strategy-bar">
+    <div>
+      <div class="strategy-label">策略引擎</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;" id="strategy-status-text">已暂停</div>
+      <div style="font-size:10px;color:var(--muted);" id="pos-summary"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);" id="strategy-toggle-label">已暂停</span>
+      <div class="toggle-track" id="strategy-toggle" onclick="toggleStrategy()"><div class="toggle-thumb"></div></div>
+    </div>
+  </div>
+  <div class="grid3" style="margin-bottom:16px;">
+    <div class="card stat-box">
+      <div class="stat-label">交易对</div>
+      <div class="stat-val" id="stat-pairs">0</div>
+      <div class="stat-sub">USDT永续合约</div>
+    </div>
+    <div class="card stat-box">
+      <div class="stat-label">模式</div>
+      <div class="stat-val" style="font-size:14px;padding-top:2px;" id="stat-mode">安全</div>
+      <div class="stat-sub">仅通知</div>
+    </div>
+    <div class="card stat-box">
+      <div class="stat-label">信号</div>
+      <div class="stat-val" id="stat-signals">0</div>
+      <div class="stat-sub">本次会话</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">实时价格</div>
+    <table>
+      <thead><tr><th>交易对</th><th>最新价</th><th>24H开盘</th><th>24H成交量</th><th>时间</th></tr></thead>
+      <tbody id="overview-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px;">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 实时价格 -->
+<div class="page" id="page-prices">
+  <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:3px;">实时价格</div>
+      <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">每1分钟自动刷新</div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="fetch('/api/prices/refresh',{method:'POST'}).then(r=>r.json()).then(d=>{showAlert('价格已刷新');pollPrices();}).catch(e=>showAlert('刷新失败','error'))">刷新价格</button>
+  </div>
+  <div class="card">
+    <div class="card-title">交易对行情</div>
+    <table>
+      <thead><tr><th>交易对</th><th>最新价</th><th>开盘价</th><th>成交量</th><th>更新时间</th><th></th></tr></thead>
+      <tbody id="prices-tbody"><tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px;">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 交易对 -->
+<div class="page" id="page-pairs">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">交易对</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">策略监控的交易对 - 点击x移除</div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">当前交易对 <span id="pairs-count" style="font-size:10px;color:var(--muted);font-weight:300"></span></div>
+      <div id="active-pairs-wrap" style="max-height:400px;overflow-y:auto;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">添加交易对</div>
+      <div style="margin-bottom:8px;">
+<label>交易对代码</label>
+<input type="text" id="add-pair-input" placeholder="BTC" onkeydown="if(event.key==='Enter')addPair()" style="text-transform:uppercase;">
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+<button class="btn btn-primary" onclick="addPair()">+ 添加</button>
+<button class="btn btn-outline" onclick="showPage('instruments');return false;">浏览全部</button>
+      </div>
+      <div class="divider"></div>
+      <div class="section-title" style="margin-bottom:8px;">快速添加</div>
+      <div id="quick-add-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 信号日志 -->
+<div class="page" id="page-log">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">信号日志</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">指标数据每15分钟更新</div>
+  </div>
+  <div class="card">
+    <div class="card-title">最近信号</div>
+    <div class="log-box" id="log-box"><div style="color:var(--muted);">启用策略以查看信号</div></div>
+    <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="clearLog()">清空</button>
+    </div>
+  </div>
+</div>
+
+<!-- 持仓 -->
+<div class="page" id="page-positions">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">持仓</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">模拟交易持仓和历史记录</div>
+  </div>
+  <div class="grid3" style="margin-bottom:16px;">
+    <div class="card stat-box">
+      <div class="stat-label">当前持仓</div>
+      <div class="stat-val" id="pos-open">0</div>
+      <div class="stat-sub" id="pos-max">/ 5 最大</div>
+    </div>
+    <div class="card stat-box">
+      <div class="stat-label">胜率</div>
+      <div class="stat-val" id="pos-winrate">0%</div>
+      <div class="stat-sub" id="pos-record">0胜 / 0负</div>
+    </div>
+    <div class="card stat-box">
+      <div class="stat-label">连亏次数</div>
+      <div class="stat-val" id="pos-losses" style="color:var(--yellow)">0</div>
+      <div class="stat-sub" id="pos-circuit" style="color:var(--muted)">熔断: 关闭</div>
+    </div>
+  </div>
+  <div class="card" id="pos-circuit-card" style="display:none;border-color:#553a1a;margin-bottom:16px;">
+    <div style="color:#d97706;font-family:var(--mono);font-size:13px;">熔断器触发 - 15分钟内禁止新交易</div>
+  </div>
+  <div class="card">
+    <div class="card-title">当前持仓 <span id="pos-open-count" style="font-size:10px;color:var(--muted)"></span></div>
+    <div id="pos-open-list" style="max-height:300px;overflow-y:auto;"></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">最近记录</div>
+    <div id="pos-history" style="max-height:300px;overflow-y:auto;"></div>
+    <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-danger btn-sm" onclick="closeAllPositions()">止盈平仓</button>
+      <button class="btn btn-outline btn-sm" onclick="resetPositions()">重置全部</button>
+    </div>
+  </div>
+  </div>
+
+
+<div class="page" id="page-settings">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">模式设置</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">安全模式=通知, 运行模式=实盘交易</div>
+  </div>
+  <div class="mode-bar">
+    <button class="mode-btn active" id="mode-btn-safe" onclick="switchMode('safe')">安全模式 - 仅通知</button>
+    <button class="mode-btn" id="mode-btn-running" onclick="switchMode('running')">运行模式 - 实盘交易</button>
+  </div>
+  <div class="mode-section active" id="section-safe">
+    <div class="card">
+      <div class="card-title">通知用户</div>
+      <div class="section-sub">邮件提醒 - 交易信号通知</div>
+      <div id="users-list" style="margin-bottom:16px;"></div>
+      <div class="divider"></div>
+      <div class="section-title">添加邮箱</div>
+      <div class="form-row">
+<div><label>邮箱</label><input type="email" id="user-email" placeholder="user@example.com"></div>
+      </div>
+      <button class="btn btn-primary" onclick="addUser()">+ 添加邮箱</button>
+      <button class="btn btn-outline" id="btn-test-email" onclick="testEmail()" style="display:none;margin-left:8px;">发送测试邮件</button>
+    </div>
+  </div>
+  <div class="mode-section" id="section-running">
+    <div class="card" style="border-color:#553a1a;">
+      <div class="card-title" style="color:#d97706;">实盘交易配置</div>
+      <div class="section-sub" style="color:#a16207;">将执行真实交易, 请确认已了解风险</div>
+      <div id="accounts-list" style="margin-bottom:16px;"></div>
+      <div class="divider"></div>
+      <div class="section-title">添加OKX账户</div>
+      <div class="form-row">
+<div><label>标签</label><input type="text" id="acc-label" placeholder="主账户"></div>
+<div><label>UID</label><input type="text" id="acc-uid" placeholder="12345678"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+<div><label>API密钥</label><input type="text" id="acc-key" placeholder="xxxx..."></div>
+<div><label>API秘钥</label><input type="password" id="acc-secret" placeholder="********"></div>
+<div><label>密码短语</label><input type="password" id="acc-pass" placeholder="********"></div>
+      </div>
+      <button class="btn btn-primary" onclick="addAccount()">+ 添加账户</button>
+    </div>
+  </div>
+</div>
+
+<!-- 浏览交易对 -->
+<div class="page" id="page-instruments">
+  <div style="margin-bottom:20px;">
+    <div style="font-size:18px;font-weight:600;margin-bottom:3px;">浏览全部交易对</div>
+    <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">OKX所有USDT永续合约</div>
+  </div>
+  <div class="card">
+    <div class="card-title">全部USDT永续合约</div>
+    <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="text" id="inst-search" placeholder="搜索..." oninput="filterInstruments()" style="max-width:240px;">
+      <button class="btn btn-accent" id="btn-add-all" onclick="addAllInstruments()" style="display:none;">一键添加全部</button>
+    </div>
+    <table>
+      <thead><tr><th>交易对</th><th>状态</th><th></th></tr></thead>
+      <tbody id="inst-tbody"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px;">加载中...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Signal Thresholds -->
+<div class="page" id="page-signals">
+  <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:3px;">信号阈值</div>
+      <div style="color:var(--muted);font-size:11px;font-family:var(--mono);">v274 指标计分 · 4H K线 · 每2小时更新</div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="appState.indicators_refreshing=true;showAlert('正在计算中，请稍候...');fetchWithCsrf('/api/indicators/refresh',{method:'POST'}).catch(e=>{});(function pollUntilReady(){setTimeout(function(){fetch('/api/indicators').then(r=>r.json()).then(d=>{if(d.refreshing){pollUntilReady();}else{appState.indicators_refreshing=false;pollIndicators();pollSignals();showAlert('计算完成');}}).catch(function(){pollUntilReady();});},2000);})();">刷新指标</button>
+   </div>
+   <div class="card" style="margin-bottom:16px;">
+     <div class="card-title">v274 模型参数</div>
+     <div id="signal-thresholds" style="font-family:var(--mono);font-size:12px;color:var(--muted);">加载中...</div>
+   </div>
+   <div class="card">
+     <div class="card-title">当前信号 <span id="signal-count" style="color:var(--muted);font-weight:400;font-size:11px;"></span> <button id="refresh-signals-btn" class="btn btn-outline btn-sm" onclick="triggerSignalsRefresh()" style="margin-left:8px;opacity:1;">刷新信号</button></div>
+     <div id="signal-list" style="font-family:var(--mono);font-size:11px;color:var(--muted);">加载中...</div>
+   </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title">快速调整 (Score阈值)</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;" id="threshold-controls">
+      <span style="font-size:11px;color:var(--accent);">🟢 Bull</span>
+      <input type="number" id="th-bull" value="1.50" min="0.1" max="3.0" step="0.01" style="width:68px;background:var(--bg2);border:1px solid #3a2a0a;color:var(--accent);padding:4px 6px;border-radius:4px;font-family:var(--mono);font-size:11px;">
+      <span style="font-size:11px;color:var(--red);">🔴 Bear</span>
+      <input type="number" id="th-bear" value="1.37" min="0.1" max="3.0" step="0.01" style="width:68px;background:var(--bg2);border:1px solid #3a2a0a;color:var(--red);padding:4px 6px;border-radius:4px;font-family:var(--mono);font-size:11px;">
+      <span style="font-size:11px;color:var(--yellow);">🟡 Range</span>
+      <input type="number" id="th-range" value="1.38" min="0.1" max="3.0" step="0.01" style="width:68px;background:var(--bg2);border:1px solid #3a2a0a;color:var(--yellow);padding:4px 6px;border-radius:4px;font-family:var(--mono);font-size:11px;">
+      <button class="btn btn-primary btn-sm" onclick="applyThresholds()" style="padding:4px 8px;">应用</button>
+      <span style="font-size:12px;color:var(--muted);margin-left:8px;">排序:</span>
+      <button class="btn btn-outline btn-sm" id="sort-long-btn" onclick="setSortMode('long')" style="padding:4px 10px;">🔼 多头</button>
+      <button class="btn btn-outline btn-sm" id="sort-short-btn" onclick="setSortMode('short')" style="padding:4px 10px;">🔽 空头</button>
+      <button class="btn btn-outline btn-sm" onclick="setSortMode('none')" style="padding:4px 10px;">重置</button>
+    </div>
+    <!-- Threshold quick-adjust control -->
+    <div style="display:none;align-items:center;gap:12px;flex-wrap:wrap;" id="threshold-flat">
+      <span style="font-size:11px;color:var(--accent);">Score Min</span>
+      <input type="number" id="th-flat" value="0.90" min="0.1" max="3.0" step="0.01" style="width:68px;background:var(--bg2);border:1px solid #3a2a0a;color:var(--accent);padding:4px 6px;border-radius:4px;font-family:var(--mono);font-size:11px;">
+      <button class="btn btn-primary btn-sm" onclick="applyFlatThreshold()" style="padding:4px 8px;">应用</button>
+      <span style="font-size:12px;color:var(--muted);margin-left:8px;">排序:</span>
+      <button class="btn btn-outline btn-sm" id="sort-long-btn" onclick="setSortMode('long')" style="padding:4px 10px;">🔼 多头</button>
+      <button class="btn btn-outline btn-sm" id="sort-short-btn" onclick="setSortMode('short')" style="padding:4px 10px;">🔽 空头</button>
+      <button class="btn btn-outline btn-sm" onclick="setSortMode('none')" style="padding:4px 10px;">重置</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">当前信号 <span id="signal-count" style="color:var(--muted);font-weight:400;font-size:11px;"></span> <button id="refresh-signals-btn" class="btn btn-outline btn-sm" onclick="triggerSignalsRefresh()" style="margin-left:8px;opacity:1;">刷新信号</button></div>
+    <div id="signal-list" style="font-family:var(--mono);font-size:11px;color:var(--muted);">加载中...</div>
+  </div>
+</div>
+
+</main>
+</div>
+</div>
+
+<script>
+window.GATEWAY_VERSION = "{{ version }}";
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

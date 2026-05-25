@@ -1,0 +1,16 @@
+[Unit]
+Description=OKX Quantitative Trading Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=thirty
+WorkingDirectory=/mnt/c/Users/Lenovo/Desktop/okx_b_v2
+ExecStart=/usr/bin/python3 /mnt/c/Users/Lenovo/Desktop/okx_b_v2/okx_quant_gateway.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

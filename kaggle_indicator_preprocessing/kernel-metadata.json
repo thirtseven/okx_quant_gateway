@@ -1,0 +1,13 @@
+{
+  "id": "thirtysevenhhhh/indicator-preprocess-4h-4y",
+  "title": "OKX 4h 4-Year Indicator Preprocessing",
+  "code_file": "preprocess_4h_4y.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": ["thirtysevenhhhh/okx-4h-4y"],
+  "competition_sources": [],
+  "keywords": ["cryptocurrency", "technical-indicators", "ohlcv", "okx", "feature-engineering"]
+}

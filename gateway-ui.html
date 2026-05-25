@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OKX 量化网关</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#e0e0e0;font-family:'Rajdhani',sans-serif;overflow:hidden;height:100vh}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0a0a0a}::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.text-glow{text-shadow:0 0 10px rgba(255,255,255,.3),0 0 20px rgba(255,255,255,.1)}
+.text-title{font-family:'Orbitron',sans-serif;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.text-mono{font-family:'Share Tech Mono',monospace}
+.btn{transition:all .25s cubic-bezier(.4,0,.2,1);cursor:pointer;border:none;font-family:'Rajdhani',sans-serif;font-weight:500}
+.btn:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.2);box-shadow:0 4px 15px rgba(255,255,255,.1)}
+.btn:active{transform:translateY(1px) scale(.98);filter:brightness(.8)}
+.btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.card{background:#111;border:1px solid #222;border-radius:8px;padding:20px;transition:all .3s}
+.card:hover{border-color:#444;box-shadow:0 0 20px rgba(255,255,255,.05)}
+input,select{background:#0a0a0a;border:1px solid #333;border-radius:6px;padding:10px 14px;color:#e0e0e0;font-family:'Share Tech Mono',monospace;font-size:13px;transition:all .3s}
+input:focus,select:focus{outline:none;border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.1)}
+input::placeholder{color:#555}
+.table-row{transition:all .2s}.table-row:hover{background:rgba(255,255,255,.05)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}.pulse{animation:pulse 2s infinite}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.page-enter{animation:fadeInUp .4s cubic-bezier(.4,0,.2,1) forwards}
+.page-exit{animation:fadeInUp .3s cubic-bezier(.4,0,.2,1) reverse forwards}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="/static/react.min.js"></script>
+<script src="/static/react-dom.min.js"></script>
+<script>
+const h = React.createElement;
+const {useState, useEffect, useRef, useCallback} = React;
+const api = async (path) => { try { const r = await fetch(path); return r.json(); } catch { return null; } };
+
+const Card = ({children, className=''}) => h('div', {className:`card ${className}`}, children);
+const Btn = ({children, variant='primary', onClick, disabled}) => {
+  const styles = {primary:{background:'#fff',color:'#000'},secondary:{background:'#222',color:'#e0e0e0',border:'1px solid #444'},danger:{background:'#333',color:'#ff6b6b',border:'1px solid #555'},ghost:{background:'transparent',color:'#888',border:'1px solid transparent'}};
+  return h('button', {className:'btn', style:{...styles[variant],padding:'10px 20px',borderRadius:6,fontSize:14,opacity:disabled?.5:1,cursor:disabled?'not-allowed':'pointer'}, onClick, disabled}, children);
+};
+const Input = ({label, value, onChange, placeholder, type='text'}) => h('div', {style:{marginBottom:16}},
+  h('label', {style:{display:'block',fontSize:11,color:'#888',marginBottom:6,fontFamily:'Share Tech Mono',textTransform:'uppercase',letterSpacing:'.1em'}}, label),
+  h('input', {type, value, onChange:e=>onChange(e.target.value), placeholder, style:{width:'100%'}})
+);
+const Toggle = ({checked, onChange, label}) => h('div', {style:{display:'flex',alignItems:'center',gap:12}},
+  h('button', {className:'btn', onClick:()=>onChange(!checked), style:{width:44,height:24,borderRadius:12,background:checked?'#fff':'#333',position:'relative',padding:0,border:'none'}},
+    h('div', {style:{position:'absolute',top:3,left:3,width:18,height:18,borderRadius:'50%',background:checked?'#000':'#666',transition:'all .3s',transform:checked?'translateX(20px)':''}})
+  ),
+  h('span', {style:{fontSize:14,color:'#aaa'}}, label)
+);
+
+const PageTransition = ({children, pageKey}) => {
+  const [displayKey, setDisplayKey] = useState(pageKey);
+  const [animClass, setAnimClass] = useState('page-enter');
+  const isFirst = useRef(true);
+  useEffect(() => {
+    if (isFirst.current) { isFirst.current = false; return; }
+    setAnimClass('page-exit');
+    const timer = setTimeout(() => { setDisplayKey(pageKey); setAnimClass('page-enter'); }, 300);
+    return () => clearTimeout(timer);
+  }, [pageKey]);
+  return h('div', {className:animClass, key:displayKey, style:{height:'100%'}}, children);
+};
+
+const Sidebar = ({active, setActive, collapsed, setCollapsed}) => {
+  const items = [{id:'dashboard',label:'仪表盘',icon:'◈'},{id:'trading',label:'交易',icon:'↗'},{id:'network',label:'网络设置',icon:'◉'},{id:'devices',label:'交易对',icon:'▦'},{id:'logs',label:'系统日志',icon:'≡'}];
+  return h('aside', {style:{width:collapsed?60:200,background:'#0f0f0f',borderRight:'1px solid #222',height:'100vh',display:'flex',flexDirection:'column',transition:'all .3s',flexShrink:0}},
+    h('div', {style:{padding:'20px 16px',borderBottom:'1px solid #222',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      !collapsed && h('div', {},
+        h('div', {className:'text-title text-glow', style:{fontSize:18,color:'#fff'}}, 'OKX'),
+        h('div', {className:'text-mono', style:{fontSize:9,color:'#555',letterSpacing:'.3em'}}, '量化网关')
+      ),
+      h('button', {className:'btn', onClick:()=>setCollapsed(!collapsed), style:{background:'transparent',color:'#666',padding:6,borderRadius:4}}, collapsed?'▶':'◀')
+    ),
+    h('nav', {style:{flex:1,paddingTop:12}},
+      items.map(item => h('button', {key:item.id, className:'btn', onClick:()=>setActive(item.id),
+        style:{width:'100%',display:'flex',alignItems:'center',gap:12,padding:'12px 16px',fontSize:13,
+          background:active===item.id?'rgba(255,255,255,.08)':'transparent',
+          color:active===item.id?'#fff':'#888',
+          borderLeft:active===item.id?'3px solid #fff':'3px solid transparent',
+          textAlign:'left',fontWeight:active===item.id?600:400}},
+        h('span', {style:{width:24,textAlign:'center',fontSize:16}}, item.icon),
+        !collapsed && item.label
+      ))
+    ),
+    h('div', {style:{padding:16,borderTop:'1px solid #222'}}, !collapsed && h('div', {className:'text-mono', style:{fontSize:10,color:'#444'}}, 'v2.00'))
+  );
+};
+
+const TopBar = ({health}) => h('header', {style:{background:'#0f0f0f',borderBottom:'1px solid #222',padding:'12px 24px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+  h('div', {style:{display:'flex',alignItems:'center',gap:16}},
+    h('div', {style:{width:10,height:10,borderRadius:'50%',background:health?.status==='ok'?'#fff':'#666',boxShadow:health?.status==='ok'?'0 0 10px rgba(255,255,255,.5)':'none',animation:'pulse 2s infinite'}}),
+    h('span', {className:'text-mono', style:{fontSize:14,fontWeight:600,color:health?.status==='ok'?'#fff':'#888'}}, health?.status==='ok'?'系统运行中':'系统离线'),
+    h('span', {className:'text-mono', style:{fontSize:10,color:'#444',marginLeft:12}}, 'OKX 量化网关 v2.00')
+  ),
+  h('div', {style:{display:'flex',alignItems:'center',gap:20}},
+    h('div', {style:{display:'flex',alignItems:'center',gap:8}},
+      h('div', {style:{width:100,height:4,background:'#222',borderRadius:2,overflow:'hidden'}}, h('div', {style:{width:'45%',height:'100%',background:'#fff',borderRadius:2}})),
+      h('span', {className:'text-mono', style:{fontSize:11,color:'#666'}}, 'CPU 45%')
+    ),
+    h('div', {style:{display:'flex',alignItems:'center',gap:8}},
+      h('div', {style:{width:100,height:4,background:'#222',borderRadius:2,overflow:'hidden'}}, h('div', {style:{width:'62%',height:'100%',background:'#fff',borderRadius:2}})),
+      h('span', {className:'text-mono', style:{fontSize:11,color:'#666'}}, '内存 62%')
+    )
+  )
+);
+
+const StatCard = ({label, value, sub, icon}) => h(Card, {},
+  h('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+    h('span', {className:'text-mono', style:{fontSize:10,color:'#666',letterSpacing:'.1em'}}, label),
+    icon && h('span', {style:{fontSize:18,color:'#fff'}}, icon)
+  ),
+  h('div', {className:'text-glow', style:{fontSize:36,fontFamily:'Orbitron',fontWeight:700,color:'#fff'}}, value),
+  sub && h('div', {className:'text-mono', style:{fontSize:11,color:'#555',marginTop:8}}, sub)
+);
+
+const Dashboard = ({state}) => {
+  const pairs = state?.trading_pairs?.length || 0;
+  const openPos = state?.open_positions?.length || 0;
+  const signals = Object.keys(state?.indicator_cache || {}).length;
+  return h('div', {style:{display:'grid',gap:24}},
+    h('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))',gap:20}},
+      h(StatCard, {label:'连接状态', value:state?.last_update?'已连接':'断开', sub:'更新: '+(state?.last_update||'--'), icon:'⚡'}),
+      h(StatCard, {label:'交易对', value:pairs, sub:'活跃监控', icon:'◈'}),
+      h(StatCard, {label:'持仓数', value:openPos+'/5', sub:'最大容量', icon:'↗'}),
+      h(StatCard, {label:'信号数', value:signals, sub:'实时计算', icon:'◉'})
+    ),
+    h(Card, {},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em',marginBottom:20}}, '最近持仓'),
+      h('table', {style:{width:'100%',borderCollapse:'collapse',fontFamily:'Share Tech Mono',fontSize:12}},
+        h('thead', {}, h('tr', {style:{borderBottom:'2px solid #333'}},
+          ['交易对','方向','入场价','当前价'].map(t=>h('th', {key:t, style:{textAlign:t==='入场价'||t==='当前价'?'right':'left',padding:'12px 16px',color:'#666',fontWeight:500}}, t))
+        )),
+        h('tbody', {}, (state?.open_positions||[]).slice(0,5).map((pos,i) => {
+          const price = state?.price_cache?.[pos.pair]?.last;
+          return h('tr', {key:i, className:'table-row'},
+            h('td', {style:{padding:'12px 16px',fontWeight:600}}, pos.pair),
+            h('td', {style:{padding:'12px 16px',color:pos.direction==='LONG'?'#fff':'#888',fontWeight:700}}, pos.direction==='LONG'?'做多':'做空'),
+            h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#888'}}, typeof pos.entry==='number'?pos.entry.toFixed(4):pos.entry),
+            h('td', {style:{padding:'12px 16px',textAlign:'right'}}, price||'--')
+          );
+        }))
+      )
+    )
+  );
+};
+
+const Trading = ({state, signals, regime, onToggle, onSetRegime}) => {
+  const sigCounts = {LONG:0,SHORT:0,HOLD:0};
+  if(signals?.signals) Object.values(signals.signals).forEach(s=>{sigCounts[s.signal]=(sigCounts[s.signal]||0)+1});
+  return h('div', {style:{display:'grid',gap:24}},
+    h('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))',gap:20}},
+      h(Card, {},
+        h('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          h('span', {className:'text-mono', style:{fontSize:10,color:'#666',letterSpacing:'.1em'}}, '策略状态'),
+          h(Toggle, {checked:state?.strategy_active, onChange:onToggle, label:state?.strategy_active?'运行中':'已停止'})
+        )
+      ),
+      h(Card, {},
+        h('div', {className:'text-mono', style:{fontSize:10,color:'#666',letterSpacing:'.1em',marginBottom:12}}, '市场模式'),
+        h('select', {value:regime?.mode||'auto', onChange:e=>onSetRegime(e.target.value), style:{width:'100%'}},
+          h('option', {value:'auto'}, '自动检测'),
+          h('option', {value:'bull'}, '牛市'),
+          h('option', {value:'bear'}, '熊市'),
+          h('option', {value:'range'}, '震荡')
+        )
+      ),
+      h(Card, {},
+        h('div', {className:'text-mono', style:{fontSize:10,color:'#666',letterSpacing:'.1em',marginBottom:12}}, '信号分布'),
+        h('div', {style:{display:'flex',gap:20,fontFamily:'Share Tech Mono'}},
+          h('span', {style:{color:'#fff',fontWeight:700}}, '● 做多: '+sigCounts.LONG),
+          h('span', {style:{color:'#888',fontWeight:700}}, '● 做空: '+sigCounts.SHORT),
+          h('span', {style:{color:'#555'}}, '● 观望: '+sigCounts.HOLD)
+        )
+      )
+    ),
+    h(Card, {},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em',marginBottom:20}}, '持仓列表'),
+      h('table', {style:{width:'100%',borderCollapse:'collapse',fontFamily:'Share Tech Mono',fontSize:12}},
+        h('thead', {}, h('tr', {style:{borderBottom:'2px solid #333'}},
+          ['交易对','方向','入场价','止损','止盈','开仓时间'].map(t=>h('th', {key:t, style:{textAlign:t==='交易对'||t==='方向'||t==='开仓时间'?'left':'right',padding:'12px 16px',color:'#666',fontWeight:500}}, t))
+        )),
+        h('tbody', {}, (state?.open_positions||[]).map((pos,i) =>
+          h('tr', {key:i, className:'table-row'},
+            h('td', {style:{padding:'12px 16px',fontWeight:600}}, pos.pair),
+            h('td', {style:{padding:'12px 16px',color:pos.direction==='LONG'?'#fff':'#888',fontWeight:700}}, pos.direction==='LONG'?'做多':'做空'),
+            h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#888'}}, typeof pos.entry==='number'?pos.entry.toFixed(6):pos.entry),
+            h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#666'}}, typeof pos.sl==='number'?pos.sl.toFixed(6):pos.sl),
+            h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#888'}}, typeof pos.tp==='number'?pos.tp.toFixed(6):pos.tp),
+            h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#555'}}, pos.opened_at||'--')
+          )
+        ))
+      )
+    )
+  );
+};
+
+const NetworkSettings = ({credentials, onSave}) => {
+  const [form, setForm] = useState({});
+  useEffect(()=>{
+    const defaultForm = {ip:'192.168.1.1',subnet:'255.255.255.0',gateway:'192.168.1.1',dns1:'8.8.8.8',dns2:'8.8.4.4',dhcp:true,smtp_host:'smtp.163.com',smtp_port:'465',smtp_sender:'',smtp_auth_code:''};
+    setForm(credentials ? {...defaultForm, ...credentials} : defaultForm);
+  },[credentials]);
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  if(!form || Object.keys(form).length === 0) return h(Card, {}, h('div', {style:{color:'#666',textAlign:'center',padding:40}}, '加载中...'));
+  return h('div', {style:{display:'grid',gap:24}},
+    h(Card, {},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em',marginBottom:20}}, '网络配置'),
+      h('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}},
+        h(Input, {label:'IP 地址', value:form.ip||'', onChange:v=>update('ip',v), placeholder:'192.168.1.1'}),
+        h(Input, {label:'子网掩码', value:form.subnet||'', onChange:v=>update('subnet',v), placeholder:'255.255.255.0'}),
+        h(Input, {label:'网关', value:form.gateway||'', onChange:v=>update('gateway',v), placeholder:'192.168.1.1'}),
+        h('div', {style:{display:'flex',alignItems:'flex-end',paddingBottom:4}}, h(Toggle, {checked:form.dhcp||false, onChange:v=>update('dhcp',v), label:'启用 DHCP'}))
+      )
+    ),
+    h(Card, {},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em',marginBottom:20}}, 'SMTP 邮件配置'),
+      h('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}},
+        h(Input, {label:'SMTP 服务器', value:form.smtp_host||'', onChange:v=>update('smtp_host',v), placeholder:'smtp.163.com'}),
+        h(Input, {label:'SMTP 端口', value:form.smtp_port||'', onChange:v=>update('smtp_port',v), placeholder:'465'}),
+        h(Input, {label:'发件人', value:form.smtp_sender||'', onChange:v=>update('smtp_sender',v), placeholder:'your@163.com'}),
+        h(Input, {label:'授权码', value:form.smtp_auth_code||'', onChange:v=>update('smtp_auth_code',v), placeholder:'163邮箱授权码', type:'password'})
+      )
+    ),
+    h('div', {style:{display:'flex',justifyContent:'flex-end',gap:16}},
+      h(Btn, {variant:'secondary', onClick:()=>setForm({ip:'192.168.1.1',subnet:'255.255.255.0',gateway:'192.168.1.1',dns1:'8.8.8.8',dns2:'8.8.4.4',dhcp:true,smtp_host:'smtp.163.com',smtp_port:'465',smtp_sender:'',smtp_auth_code:''})}, '重置'),
+      h(Btn, {variant:'primary', onClick:()=>onSave(form)}, '保存配置')
+    )
+  );
+};
+
+const DeviceList = ({state}) => {
+  const [page, setPage] = useState(1);
+  const perPage = 15;
+  const pairs = state?.trading_pairs || [];
+  const totalPages = Math.ceil(pairs.length / perPage);
+  const pageData = pairs.slice((page-1)*perPage, page*perPage);
+  return h(Card, {},
+    h('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em'}}, '交易对列表'),
+      h('span', {className:'text-mono', style:{fontSize:11,color:'#555'}}, pairs.length+' 个')
+    ),
+    h('table', {style:{width:'100%',borderCollapse:'collapse',fontFamily:'Share Tech Mono',fontSize:12}},
+      h('thead', {}, h('tr', {style:{borderBottom:'2px solid #333'}},
+        h('th', {style:{textAlign:'left',padding:'12px 16px',color:'#666',fontWeight:500}}, '#'),
+        h('th', {style:{textAlign:'left',padding:'12px 16px',color:'#666',fontWeight:500}}, '交易对'),
+        h('th', {style:{textAlign:'right',padding:'12px 16px',color:'#666',fontWeight:500}}, '价格'),
+        h('th', {style:{textAlign:'right',padding:'12px 16px',color:'#666',fontWeight:500}}, '信号'),
+        h('th', {style:{textAlign:'right',padding:'12px 16px',color:'#666',fontWeight:500}}, '数据点')
+      )),
+      h('tbody', {}, pageData.map((pair,i) => {
+        const price = state?.price_cache?.[pair];
+        const ind = state?.indicator_cache?.[pair];
+        return h('tr', {key:pair, className:'table-row'},
+          h('td', {style:{padding:'12px 16px',color:'#444'}}, (page-1)*perPage+i+1),
+          h('td', {style:{padding:'12px 16px',fontWeight:600}}, pair),
+          h('td', {style:{padding:'12px 16px',textAlign:'right'}}, price?.last||'--'),
+          h('td', {style:{padding:'12px 16px',textAlign:'right'}}, h('span', {style:{fontSize:11,padding:'4px 10px',borderRadius:4,background:ind?.signal==='LONG'?'rgba(255,255,255,.1)':ind?.signal==='SHORT'?'rgba(255,255,255,.05)':'rgba(255,255,255,.03)',color:ind?.signal==='LONG'?'#fff':ind?.signal==='SHORT'?'#888':'#555',fontWeight:600}}, ind?.signal==='LONG'?'做多':ind?.signal==='SHORT'?'做空':'观望')),
+          h('td', {style:{padding:'12px 16px',textAlign:'right',color:'#444'}}, ind?.data_points||'--')
+        );
+      }))
+    ),
+    totalPages>1 && h('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:20,paddingTop:20,borderTop:'1px solid #333'}},
+      h('span', {className:'text-mono', style:{fontSize:11,color:'#555'}}, '第 '+page+' / '+totalPages+' 页'),
+      h('div', {style:{display:'flex',gap:12}},
+        h(Btn, {variant:'ghost', onClick:()=>setPage(Math.max(1,page-1)), disabled:page===1}, '上一页'),
+        h(Btn, {variant:'ghost', onClick:()=>setPage(Math.min(totalPages,page+1)), disabled:page===totalPages}, '下一页')
+      )
+    )
+  );
+};
+
+const SystemLogs = ({logs}) => {
+  const endRef = useRef(null);
+  useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'})},[logs]);
+  const entries = logs?.log || [];
+  const flat = Array.isArray(entries) ? entries.flatMap(e => {
+    if(typeof e==='string') return [{text:e,level:'info'}];
+    if(e?.signals) return e.signals.map(s=>({text:s,level:s.includes('ERROR')?'error':s.includes('WARNING')?'warn':'info',time:e.time}));
+    return [{text:JSON.stringify(e),level:'info'}];
+  }) : [{text:'等待日志...',level:'info'}];
+  return h(Card, {style:{height:'calc(100vh - 160px)'}},
+    h('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
+      h('div', {className:'text-mono', style:{fontSize:11,color:'#666',letterSpacing:'.1em'}}, '系统日志'),
+      h('span', {className:'text-mono', style:{fontSize:11,color:'#555'}}, flat.length+' 条')
+    ),
+    h('div', {style:{background:'#050505',border:'1px solid #222',borderRadius:8,padding:20,height:'calc(100% - 60px)',overflowY:'auto',fontFamily:'Share Tech Mono',fontSize:12,lineHeight:2}},
+      flat.map((log,i) => h('div', {key:i, style:{color:log.level==='error'?'#ff6b6b':log.level==='warn'?'#ffd93d':'#888'}},
+        log.time && h('span', {style:{color:'#444',marginRight:12}}, '['+log.time+']'),
+        log.text
+      )),
+      h('div', {ref:endRef})
+    )
+  );
+};
+
+const App = () => {
+  const [active, setActive] = useState('dashboard');
+  const [collapsed, setCollapsed] = useState(false);
+  const [health, setHealth] = useState(null);
+  const [state, setState] = useState(null);
+  const [signals, setSignals] = useState(null);
+  const [regime, setRegime] = useState(null);
+  const [credentials, setCredentials] = useState(null);
+  const [logs, setLogs] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    const [h, s, sig, r, c] = await Promise.all([api('/api/health'), api('/api/state'), api('/api/signals'), api('/api/strategy/regime'), api('/api/credentials/values')]);
+    setHealth(h); setState(s); setSignals(sig); setRegime(r); setCredentials(c); setLogs({log: s?.strategy_log || []});
+  }, []);
+
+  useEffect(() => { fetchData(); const t = setInterval(fetchData, 30000); return () => clearInterval(t); }, [fetchData]);
+
+  const toggleStrategy = async () => { await fetch('/api/strategy/toggle', {method:'POST'}); fetchData(); };
+  const setRegimeMode = async (mode) => { await fetch('/api/strategy/regime', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mode})}); fetchData(); };
+  const saveNetwork = async (form) => { for(const[k,v] of Object.entries(form)) if(v&&typeof v==='string') await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({type:k,value:v})}); fetchData(); };
+
+  const pages = {
+    dashboard: h(Dashboard, {state}),
+    trading: h(Trading, {state, signals, regime, onToggle:toggleStrategy, onSetRegime:setRegimeMode}),
+    network: h(NetworkSettings, {credentials, onSave:saveNetwork}),
+    devices: h(DeviceList, {state}),
+    logs: h(SystemLogs, {logs})
+  };
+
+  return h('div', {style:{display:'flex',height:'100vh',overflow:'hidden'}},
+    h(Sidebar, {active, setActive, collapsed, setCollapsed}),
+    h('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}},
+      h(TopBar, {health}),
+      h('main', {style:{flex:1,overflow:'auto',padding:28}}, h(PageTransition, {pageKey:active}, pages[active]))
+    )
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('app')).render(h(App));
+</script>
+</body>
+</html>

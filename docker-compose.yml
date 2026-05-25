@@ -1,0 +1,56 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: okx_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+      MYSQL_DATABASE: ${DB_NAME:-okx_gateway}
+      MYSQL_USER: ${DB_USER:-okx_trader}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?required}
+    ports:
+      - "3307:3306"
+    mem_limit: 512m
+    cpus: '1.0'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  okx-gateway:
+    build: .
+    container_name: okx_quant_gateway
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-okx_trader}
+      - DB_PASSWORD=${DB_PASSWORD:?required}
+      - DB_NAME=${DB_NAME:-okx_gateway}
+      - SMTP_SENDER=${SMTP_SENDER:-}
+      - SMTP_AUTH_CODE=${SMTP_AUTH_CODE:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - gateway_data:/app/data
+
+volumes:
+  mysql_data:
+  gateway_data:

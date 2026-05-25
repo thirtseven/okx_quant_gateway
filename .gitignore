@@ -1,0 +1,79 @@
+# Environment and secrets
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+pyenv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (generated at runtime)
+data/*.csv
+data/*.json
+data/*.parquet
+data/*.pkl
+data/*.joblib
+data/.encryption_key
+data/okx_4h_1y/
+data/ga_checkpoints/
+data/.XLM*
+data/TEST_*
+data/*_4H.csv
+data/v274_model*
+data/credentials.json
+data/gateway_state.json
+
+# Agent plans
+.sisyphus/
+
+# Secrets
+.env
+
+# Logs
+*.log
+
+# Test files
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build artifacts
+*.spec
+*.bat
+python_embed.zip
