@@ -12,6 +12,37 @@ import arrow
 logger = logging.getLogger(__name__)
 
 
+logger = logging.getLogger(__name__)
+
+
+def start_engine_bridge(state_ref, state_lock):
+    """Poll signal engine and populate indicator_cache for strategy_tick."""
+    import httpx
+
+    def engine_bridge():
+        while True:
+            try:
+                r = httpx.get("http://127.0.0.1:5001/api/signals", timeout=10)
+                if r.status_code == 200:
+                    engine_data = r.json()
+                    signals = engine_data.get("signals", {})
+                    if signals:
+                        pairs = set(state_ref.get("trading_pairs", []))
+                        filtered = {k: v for k, v in signals.items() if k in pairs}
+                        if filtered:
+                            with state_lock:
+                                state_ref["indicator_cache"] = filtered
+                                state_ref["last_update"] = engine_data.get("last_update", "never")
+                            logger.debug("[BRIDGE] Loaded %d signals from engine", len(filtered))
+            except Exception:
+                pass
+            time.sleep(30)
+
+    t = threading.Thread(target=engine_bridge, daemon=True, name="engine-bridge")
+    t.start()
+    return t
+
+
 def _run_async_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -372,6 +403,7 @@ def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_
 
 
 def launch_all_threads(state_ref, state_lock, genome, save_state_func, notify_signal_func):
+    start_engine_bridge(state_ref, state_lock)
     start_price_updater(state_ref, state_lock)
     start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_state_func)
     start_state_persistor(state_ref, state_lock, save_state_func)
