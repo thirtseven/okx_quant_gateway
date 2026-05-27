@@ -31,11 +31,14 @@ def _load_model():
     try:
         _model = lgb.Booster(model_file=MODEL_FILE)
         _params = json.load(open(PARAMS_FILE))
-        _features = _params["features"]
-        if os.path.exists(PREPROC_FILE):
-            import joblib
-            _preprocessor = joblib.load(PREPROC_FILE)
-        logger.info("[v274] Loaded: %d features, %s", _params["n_features"], _params["champion"])
+        features_raw = _params["features"]
+        if isinstance(features_raw, dict):
+            _features = features_raw["names"]
+        else:
+            _features = features_raw
+        n_feat = len(_features)
+        champion = _params.get("champion", "v315-ga")
+        logger.info("[v274] Loaded: %d features, %s", n_feat, champion)
         return True
     except Exception as e:
         logger.error("[v274] Load failed: %s", e)
@@ -62,22 +65,29 @@ def _build_features(df):
     n = len(df)
     result = {"open": open_p, "high": high, "low": low, "close": close, "volume": vol}
     s_close = pd.Series(close)
-    for w in [7, 14, 25, 50, 200]:
+    for w in [7, 14, 25, 50, 100, 200]:
         result[f"sma_{w}"] = s_close.rolling(w, min_periods=1).mean().values
         result[f"ema_{w}"] = s_close.ewm(span=w, adjust=False).mean().values
     result["rsi_14"] = _calc_rsi(close, 14)
+    result["rsi_7"] = _calc_rsi(close, 7)
     result["atr_14"] = _calc_atr(high, low, close, 14)
     result["stoch_k"] = _calc_stoch(high, low, close, 14)
     result["stoch_d"] = pd.Series(result["stoch_k"]).rolling(3, min_periods=1).mean().values
+    # MACD
+    ema12 = pd.Series(close).ewm(span=12, adjust=False).mean().values
+    ema26 = pd.Series(close).ewm(span=26, adjust=False).mean().values
+    result["macd_signal"] = pd.Series(ema12 - ema26).ewm(span=9, adjust=False).mean().values
     eps = 1e-9
+    sma7, sma25, sma50, sma200 = result["sma_7"], result["sma_25"], result["sma_50"], result["sma_200"]
     ema7, ema25, ema50, ema200 = result["ema_7"], result["ema_25"], result["ema_50"], result["ema_200"]
-    sma7, sma25, sma50 = result["sma_7"], result["sma_25"], result["sma_50"]
     result["close_vs_sma_7"] = close / (sma7 + eps)
     result["close_vs_sma_25"] = close / (sma25 + eps)
     result["close_vs_sma_50"] = close / (sma50 + eps)
+    result["close_vs_sma_200"] = close / (sma200 + eps)
     result["close_vs_ema_7"] = close / (ema7 + eps)
     result["close_vs_ema_25"] = close / (ema25 + eps)
     result["close_vs_ema_50"] = close / (ema50 + eps)
+    result["close_vs_ema_200"] = close / (ema200 + eps)
     result["ema_7_25_ratio"] = ema7 / (ema25 + eps)
     result["ema_25_50_ratio"] = ema25 / (ema50 + eps)
     result["ema_50_200_ratio"] = ema50 / (ema200 + eps)
@@ -106,6 +116,14 @@ def _build_features(df):
     result["close_position"] = (close - lo25) / (hi25 - lo25 + eps)
     result["high_low_ratio"] = np.where(low > 0, high / low, 1.0)
     result["mfi_14"] = _calc_mfi(high, low, close, vol, 14)
+    result["cci_20"] = _calc_cci(high, low, close, 20)
+    result["kc_width_pct"] = (kc.keltner_channel_hband().values - kc.keltner_channel_lband().values) / (result["kc_middle"] + eps)
+    result["obv"] = _calc_obv(close, vol)
+    result["volume_sma_20"] = pd.Series(vol).rolling(20, min_periods=1).mean().values
+    result["volume_sma_50"] = pd.Series(vol).rolling(50, min_periods=1).mean().values
+    result["cmf_20"] = _calc_cmf(high, low, close, vol, 20)
+    pc = np.roll(close, 1); pc[0] = close[0]
+    result["gap_open_pct"] = (open_p - pc) / (pc + eps)
     feature_df = pd.DataFrame(result)
     feature_df = feature_df.fillna(0).replace([np.inf, -np.inf], 0)
     return feature_df
@@ -185,6 +203,34 @@ def compute_signal(candles):
 
 
 def compute_batch_signals(pairs_candles):
+    """Placeholder for batch computation."""
+    return {}
+def _calc_cci(high, low, close, period=20):
+    tp = (np.array(high) + np.array(low) + np.array(close)) / 3
+    sma_tp = pd.Series(tp).rolling(period, min_periods=1).mean().values
+    mad = pd.Series(np.abs(tp - sma_tp)).rolling(period, min_periods=1).mean().values
+    return (tp - sma_tp) / (0.015 * mad + 1e-9)
+
+
+def _calc_obv(close, vol):
+    obv = np.zeros(len(close))
+    v = np.array(vol)
+    for i in range(1, len(close)):
+        if close[i] > close[i-1]:
+            obv[i] = obv[i-1] + v[i]
+        elif close[i] < close[i-1]:
+            obv[i] = obv[i-1] - v[i]
+        else:
+            obv[i] = obv[i-1]
+    return obv
+
+
+def _calc_cmf(high, low, close, vol, period=20):
+    h, l, c = np.array(high), np.array(low), np.array(close)
+    mfm = ((c - l) - (h - c)) / (h - l + 1e-9)
+    mfv = mfm * np.array(vol)
+    return pd.Series(mfv).rolling(period, min_periods=1).sum().values / (
+        pd.Series(np.array(vol)).rolling(period, min_periods=1).sum().values + 1e-9)
     """Batch: predict all pairs, normalize scores, rank top-N as LONG."""
     if not _load_model():
         return {}
