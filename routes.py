@@ -463,16 +463,6 @@ def fetch_all_usdt_swap_instruments():
     return _fetch()
 
 
-def _engine_proxy(path):
-    """Proxy request to signal engine on port 5001."""
-    import httpx
-    try:
-        r = httpx.get(f"http://127.0.0.1:5001{path}", timeout=5)
-        return r.json(), r.status_code
-    except Exception:
-        return None, 502
-
-
 def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_signal_ref,
                     fetch_pair_candles_ref, calculate_for_pair_ref, fetch_all_prices_ref,
                     save_state_ref, state_dirty_ref, MAX_POSITIONS):
@@ -577,42 +567,50 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/indicators")
     def api_indicators():
-        data, code = _engine_proxy("/api/indicators")
-        if data:
-            return jsonify(data), code
-        return jsonify({"pair_count": 0, "last_update": "never", "refreshing": False,
-                        "timing": {}, "indicators": {}})
+        timing = local_state.get("last_timing", {})
+        last_update = local_state.get("last_update", "never")
+        refreshing = local_state.get("indicators_refreshing", False)
+        pair_count = len(local_state.get("indicator_cache", {}))
+        return jsonify({"pair_count": pair_count, "last_update": last_update,
+                        "refreshing": refreshing, "timing": timing,
+                        "indicators": {}, "interval_seconds": 7200})
 
     @app.route("/api/signals")
     def api_signals():
-        data, code = _engine_proxy("/api/signals")
-        if not data:
-            return jsonify({"signals": {}, "thresholds": {"regime_mode": "auto", "regimes": {}}, "computing": False})
-        pairs = set(local_state.get("trading_pairs", []))
-        raw_signals = {k: v for k, v in data.get("signals", {}).items() if k in pairs}
-        # Gateway-side normalization on filtered pairs
-        all_sc = [(p, max(r.get("norm_long", 0), r.get("norm_short", 0)))
-                  for p, r in raw_signals.items() if r.get("data_points", 0) > 0]
-        if all_sc:
-            mn = min(v for _, v in all_sc)
-            mx = max(v for _, v in all_sc)
-            rng = mx - mn if mx > mn else 1.0
-            sorted_ps = sorted(all_sc, key=lambda x: -x[1])
-            top_n = max(1, len(sorted_ps) // 2)
-            for i, (pair, _) in enumerate(sorted_ps):
-                if pair in raw_signals:
-                    raw_signals[pair]["norm_long"] = round((sorted_ps[i][1] - mn) / rng * 100, 1)
-                    if i >= top_n:
-                        raw_signals[pair]["signal"] = "HOLD"
-        data["signals"] = raw_signals
-        return jsonify(data), code
+        from lgbm_bridge import get_params, is_loaded as lgbm_loaded
+        g = build_genome()
+        cached = dict(local_state.get("indicator_cache", {}))
+        signals = {}
+        for pair, result in cached.items():
+            try:
+                if not (result and result.get("close")):
+                    continue
+                e25 = result.get("ema_25", 0)
+                e50 = result.get("ema_50", 0)
+                regime = "bull" if e25 > e50 * 1.02 else ("bear" if e25 < e50 * 0.98 else "range")
+                signals[pair] = {
+                    "signal": result.get("signal", "HOLD"), "regime": regime,
+                    "norm_long": result.get("score", result.get("norm_long", 0)),
+                    "norm_short": result.get("norm_short", 0),
+                    "rsi_14": result.get("rsi_14"), "close": result.get("close"),
+                }
+            except Exception:
+                pass
+        thresholds = {"regime_mode": g.get("regime_mode", "auto"),
+                      "regimes": {r: dict(p.items()) for r, p in g["regimes"].items()}}
+        return jsonify({"signals": signals, "thresholds": thresholds, "computing": False})
 
     @app.route("/api/strategy/model")
     def api_strategy_model():
-        data, code = _engine_proxy("/api/strategy/model")
-        if data:
-            return jsonify(data), code
-        return jsonify({"loaded": False})
+        from lgbm_bridge import get_params, is_loaded
+        if not is_loaded():
+            return jsonify({"loaded": False})
+        p = get_params()
+        return jsonify({"loaded": True, "version": p.get("version", "v315"),
+                        "champion": p.get("champion", "GA"),
+                        "model": p.get("model_params", {}),
+                        "trade": p.get("trade_params", {}),
+                        "n_features": len(p.get("features", "")) if isinstance(p.get("features"), list) else p.get("features", {}).get("selected", 0)})
 
     @app.route("/api/threshold", methods=["PATCH"])
     def api_threshold():

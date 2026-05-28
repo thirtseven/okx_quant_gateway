@@ -403,7 +403,7 @@ def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_
 
 
 def launch_all_threads(state_ref, state_lock, genome, save_state_func, notify_signal_func):
-    start_engine_bridge(state_ref, state_lock)
+    start_data_updater(state_ref, state_lock, genome, save_state_func)
     start_price_updater(state_ref, state_lock)
     start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_state_func)
     start_state_persistor(state_ref, state_lock, save_state_func)
