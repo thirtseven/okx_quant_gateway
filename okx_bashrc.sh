@@ -2,7 +2,7 @@
 # ── OKX Quantitative Gateway 快捷指令 ──
 # 纳入 ~/.bashrc: source /path/to/okx_bashrc.sh
 
-export OKX_HOME="${OKX_HOME:-/home/thirty/okx-gateway}"
+export OKX_HOME="${OKX_HOME:-/mnt/c/Users/Lenovo/Desktop/okx_b_v2}"
 
 # ═══════════════════════════════════════════════════════════════
 # 内部工具函数
@@ -102,21 +102,14 @@ _proxy_setup() {
     fi
 
     local conf=$(_okx_nginx_conf)
-    local avail=$(_okx_nginx_avail)
-    local enabled=$(_okx_nginx_enabled)
+    echo "启动 nginx (本地配置): $conf"
+    pkill nginx 2>/dev/null
+    nginx -c "$conf" &
+    sleep 1
 
-    echo "配置 nginx 反向代理: $conf → $avail"
-    sudo cp "$conf" "$avail"
-    sudo ln -sf "$avail" "$enabled"
-    sudo rm -f /etc/nginx/sites-enabled/default
-    sudo nginx -t && sudo nginx -s reload 2>/dev/null || sudo nginx
-
-    local ip=$(hostname -I | awk '{print $1}')
     echo ""
-    echo "  反向代理已配置:"
-    echo "    http://localhost     → :5000"
-    echo "    http://$ip           → :5000"
-    echo "  日志: /var/log/nginx/okx_gateway_*.log"
+    echo "  反向代理已启动:"
+    echo "    http://okx.local     → :5000"
 }
 
 _proxy_remove() {
