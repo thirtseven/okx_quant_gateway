@@ -56,6 +56,7 @@ def start_data_updater(state_ref: Dict[str, Any], state_lock: threading.Lock, ge
 
     def data_updater():
         loop = _run_async_loop()
+        time.sleep(10)  # Let Flask start serving first
         while True:
             try:
                 results, timing = loop.run_until_complete(
