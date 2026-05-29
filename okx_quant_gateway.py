@@ -137,16 +137,13 @@ routes.register_routes(
     fetch_all_prices_ref=fetch_all_prices,
     save_state_ref=save_state,
     state_dirty_ref=STATE_DIRTY_REF,
-    MAX_POSITIONS=999999,  # No limit — overtrading controlled via cooldown penalty
+    MAX_POSITIONS=999999,
 )
 
-threads.launch_all_threads(
-    state_ref=state,
-    state_lock=state_lock,
-    genome=build_genome(),
-    save_state_func=save_state,
-    notify_signal_func=notify_signal,
-)
+# Background threads for trading only (data comes from separate engine process)
+threads.start_strategy_tick(state_ref=state, state_lock=state_lock, genome=build_genome(),
+                            notify_signal_func=notify_signal, save_state_func=save_state)
+threads.start_state_persistor(state_ref=state, state_lock=state_lock, save_state_func=save_state)
 
 if __name__ == "__main__":
     from credential_manager import get_credential_status
@@ -161,4 +158,5 @@ if __name__ == "__main__":
         print("  ⚠️  No credentials configured - use web interface to set up")
     print("=" * 60)
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    from waitress import serve
+    serve(app, host="0.0.0.0", port=5000)
