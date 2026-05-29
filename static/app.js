@@ -323,12 +323,12 @@ function closeAllPositions(){
 }
 
 function pollLog(){
-  fetch('/api/log').then(r=>r.json()).then(d=>{
+  fetch('/api/log').then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
     const box=document.getElementById('log-box');
     if(!d.log.length){box.innerHTML='<div style="color:var(--muted)">暂无信号</div>';return;}
     box.innerHTML=d.log.flatMap(e=>e.signals.map(s=>'<div class="log-line"><span class="log-time">['+escapeHtml(e.time)+']</span><span class="log-signal">'+escapeHtml(s.replace(/\\[.*?\\]/,''))+'</span></div>')).join('');
     document.getElementById('stat-signals').textContent=d.log.reduce((a,e)=>a+e.signals.length,0);
-  });
+  }).catch(e=>{console.warn('pollLog failed:',e.message);});
 }
 setInterval(pollLog,6000);pollLog();
 function clearLog(){fetchWithCsrf('/api/log/clear',{method:'POST'}).then(()=>pollLog());}
@@ -353,7 +353,9 @@ function filterInstruments(){
 }
 function addFromBrowser(pair){
   fetch('/api/pairs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair})})
-    .then(r=>r.json()).then(d=>{if(d.ok){appState.trading_pairs=d.pairs;renderPairs();renderQuickAdd();filterInstruments();showAlert('已添加: '+pair)}else showAlert(d.msg,'error');});
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(d=>{if(d.ok){appState.trading_pairs=d.pairs;renderPairs();renderQuickAdd();filterInstruments();showAlert('已添加: '+pair)}else showAlert(d.msg,'error');})
+    .catch(e=>{showAlert('添加失败: '+e.message,'error');});
 }
 function addAllInstruments(){
   const btn=document.getElementById('btn-add-all');

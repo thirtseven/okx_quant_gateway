@@ -790,6 +790,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         return jsonify({"ok": True, "pairs": local_state["trading_pairs"]})
 
     @app.route("/api/pairs/add-all", methods=["POST"])
+    @limiter.limit("1 per 5 minutes")
     def api_pairs_add_all():
         from okx_client import fetch_single_pair_candles
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -797,6 +798,11 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
             all_instruments = fetch_all_usdt_swap_instruments()
         except Exception as e:
             return jsonify({"ok": False, "msg": f"获取合约列表失败: {str(e)[:80]}"})
+        existing = set(local_state.get("trading_pairs", []))
+        to_add = [p for p in all_instruments if p not in existing]
+        if not to_add:
+            return jsonify({"ok": True, "added": 0, "skipped": 0, "failed": 0, "list": [], "skipped_list": [], "failed_list": []})
+        to_add = to_add[:50]
         added, skipped, failed = [], [], []
         def _try_add(pair):
             try:
@@ -809,8 +815,8 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
                 return ("ok", result)
             except Exception:
                 return "err"
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(_try_add, p): p for p in all_instruments}
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futures = {ex.submit(_try_add, p): p for p in to_add}
             for f in as_completed(futures):
                 pair = futures[f]
                 status = f.result()
