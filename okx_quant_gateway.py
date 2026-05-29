@@ -141,6 +141,8 @@ routes.register_routes(
 )
 
 # Background threads for trading only (data comes from separate engine process)
+threads.start_data_updater(state_ref=state, state_lock=state_lock, genome=build_genome(), save_state_func=save_state)
+threads.start_price_updater(state_ref=state, state_lock=state_lock)
 threads.start_strategy_tick(state_ref=state, state_lock=state_lock, genome=build_genome(),
                             notify_signal_func=notify_signal, save_state_func=save_state)
 threads.start_state_persistor(state_ref=state, state_lock=state_lock, save_state_func=save_state)
