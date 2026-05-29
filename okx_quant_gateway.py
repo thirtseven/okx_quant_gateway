@@ -145,6 +145,11 @@ threads.start_strategy_tick(state_ref=state, state_lock=state_lock, genome=build
                             notify_signal_func=notify_signal, save_state_func=save_state)
 threads.start_state_persistor(state_ref=state, state_lock=state_lock, save_state_func=save_state)
 
+from model_manager import get_manager as get_model_manager
+model_mgr = get_model_manager()
+model_mgr.start_watcher(interval=30)
+logger.info("Model watcher started (30s interval)")
+
 if __name__ == "__main__":
     from credential_manager import get_credential_status
     creds = get_credential_status()
@@ -152,7 +157,13 @@ if __name__ == "__main__":
 
     print("=" * 60)
     print("  OKX Quantitative Trading Gateway v2.00")
-    print("  Local: http://127.0.0.1:5000")
+    print(f"  Local: http://127.0.0.1:5000")
+    import subprocess
+    try:
+        wsl_ip = subprocess.check_output("hostname -I | awk '{print $1}'", shell=True).decode().strip()
+        print(f"  WSL:   http://{wsl_ip}:5000")
+    except Exception:
+        pass
     print(f"  Credentials configured: {configured_count}/{len(creds)}")
     if configured_count == 0:
         print("  ⚠️  No credentials configured - use web interface to set up")
