@@ -12,9 +12,6 @@ import arrow
 logger = logging.getLogger(__name__)
 
 
-logger = logging.getLogger(__name__)
-
-
 def start_engine_bridge(state_ref, state_lock):
     """Poll signal engine and populate indicator_cache for strategy_tick."""
     import httpx

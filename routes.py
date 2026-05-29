@@ -1200,11 +1200,15 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         data = request.get_json()
         if not data or "name" not in data:
             return jsonify({"ok": False, "msg": "Missing model name"}), 400
-        if set_active_model(data["name"]):
-            return jsonify({"ok": True, "msg": f"Active model set to {data['name']}"})
-        return jsonify({"ok": False, "msg": f"Model '{data['name']}' not found"}), 404
+        name = data["name"]
+        if not name or '..' in name or '/' in name or '\\' in name or len(name) > 64:
+            return jsonify({"ok": False, "msg": "Invalid model name"}), 400
+        if set_active_model(name):
+            return jsonify({"ok": True, "msg": f"Active model set to {name}"})
+        return jsonify({"ok": False, "msg": f"Model '{name}' not found"}), 404
 
     @app.route("/api/models/reload", methods=["POST"])
+    @limiter.limit("10 per minute")
     def api_models_reload():
         from model_manager import reload_model
         data = request.get_json() or {}

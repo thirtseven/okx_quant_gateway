@@ -75,6 +75,7 @@ def save_state():
             persist["running_accounts_encrypted"] = running_accounts
         with open(GATEWAY_STATE_FILE, "w") as f:
             json.dump(persist, f, indent=2)
+        os.chmod(GATEWAY_STATE_FILE, 0o600)
         _state_dirty.clear()
     except Exception as e:
         logging.warning("[SAVE_STATE] Failed to persist state: %s", e)

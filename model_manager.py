@@ -81,6 +81,11 @@ class ModelContainer:
                     logger.error("[ModelManager] %s", self.error)
                     return False
                 
+                if not self._is_valid_model_name(self.name):
+                    self.error = f"Invalid model name: {self.name}"
+                    logger.error("[ModelManager] %s", self.error)
+                    return False
+                
                 self.model = lgb.Booster(model_file=model_file)
                 
                 with open(params_file, 'r') as f:
@@ -96,6 +101,7 @@ class ModelContainer:
                 if os.path.exists(preprocessor_file):
                     try:
                         import joblib
+                        logger.warning("[ModelManager] Loading preprocessor with joblib - ensure model files are trusted")
                         self.preprocessor = joblib.load(preprocessor_file)
                     except Exception as e:
                         logger.warning("[ModelManager] Failed to load preprocessor: %s", e)
@@ -112,6 +118,16 @@ class ModelContainer:
                 self.loaded = False
                 logger.error("[ModelManager] Failed to load model '%s': %s", self.name, e)
                 return False
+    
+    def _is_valid_model_name(self, name: str) -> bool:
+        """Validate model name to prevent path traversal."""
+        if not name or not isinstance(name, str):
+            return False
+        if '..' in name or '/' in name or '\\' in name:
+            return False
+        if len(name) > 64:
+            return False
+        return name.isalnum() or '_' in name or '-' in name
     
     def predict(self, X: np.ndarray) -> Optional[float]:
         """Run prediction on preprocessed features."""

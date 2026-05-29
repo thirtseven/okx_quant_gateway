@@ -79,6 +79,24 @@ def set_param(path: str, value: Any) -> bool:
     global _strategy_data
     if not _initialized:
         init_strategy_params()
+    
+    if not path or not isinstance(path, str):
+        return False
+    
+    if '..' in path or '/' in path or '\\' in path:
+        logger.error("Invalid param path: %s", path)
+        return False
+    
+    if len(path) > 256:
+        logger.error("Param path too long: %s", path)
+        return False
+    
+    allowed_prefixes = ["regimes.", "general.", "trading.", "model."]
+    if not any(path.startswith(prefix) or path == prefix.rstrip('.') for prefix in allowed_prefixes):
+        if '.' in path:
+            logger.error("Param path not in allowed namespace: %s", path)
+            return False
+    
     genome = _get_genome()
     keys = path.split(".")
     current = genome
@@ -97,6 +115,15 @@ def reset_params() -> bool:
     _initialized = False
     init_strategy_params()
     logger.info("Reset to file defaults")
+    return True
+
+
+def set_params(params: Dict[str, Any]) -> bool:
+    if not isinstance(params, dict):
+        return False
+    for key, value in params.items():
+        if not set_param(key, value):
+            return False
     return True
 
 
