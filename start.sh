@@ -52,23 +52,24 @@ start() {
     tmux new-session -d -s "$TMUX_SESSION" "python3 okx_quant_gateway.py 2>&1 | tee $LOG_FILE"
     
     echo "⏳ 等待服务就绪..."
+    WSL_IP=$(hostname -I | awk '{print $1}')
     for i in $(seq 1 60); do
         if ss -tln | grep -q 5000; then
-            curl -s --max-time 2 http://localhost:5000/api/health >/dev/null 2>&1 && break
+            curl -s --max-time 2 http://$WSL_IP:5000/api/health >/dev/null 2>&1 && break
         fi
         sleep 1
     done
     if ss -tln | grep -q 5000; then
             echo "✅ 服务已启动"
             echo ""
-            echo "📊 本地访问:    http://localhost:5000"
+            echo "📊 本地访问:    http://$WSL_IP:5000"
             echo "🔗 WSL IP:     http://$WSL_IP:5000"
             echo ""
             echo "⚠️  Windows 访问需配置端口转发:"
             echo "   方法 A: 运行 setup_wsl_portforward.bat (管理员)"
             echo "   方法 B: $0 port-forward"
             echo ""
-            echo "🔧 设置页面:   http://localhost:5000/settings"
+            echo "🔧 设置页面:   http://$WSL_IP:5000/settings"
             echo "📝 日志: tmux attach -t $TMUX_SESSION"
             echo "🔑 PID: $(pgrep -f 'python3.*okx_quant_gateway' | head -1)"
             return 0
@@ -99,14 +100,14 @@ status() {
         PID=$(pgrep -f 'python3.*okx_quant_gateway' | head -1)
         echo "✅ 服务器运行中 (tmux: $TMUX_SESSION)"
         echo "🔑 PID: $PID"
-        echo "📊 本地访问: http://localhost:5000"
+        echo "📊 本地访问: http://$HOST_IP:5000"
         echo "🔗 WSL IP:  http://$HOST_IP:5000"
-        echo "🔧 设置页面: http://localhost:5000/settings"
+        echo "🔧 设置页面: http://$HOST_IP:5000/settings"
         
-        HEALTH=$(curl -s --max-time 3 http://localhost:5000/api/health 2>/dev/null)
+        HEALTH=$(curl -s --max-time 3 http://$HOST_IP:5000/api/health 2>/dev/null)
         [ -n "$HEALTH" ] && echo "💚 健康状态: $HEALTH" || echo "⚠️  健康检查: 无响应"
         
-        CREDS=$(curl -s --max-time 3 http://localhost:5000/api/credentials/status 2>/dev/null)
+        CREDS=$(curl -s --max-time 3 http://$HOST_IP:5000/api/credentials/status 2>/dev/null)
         [ -n "$CREDS" ] && echo "🔐 凭证状态: $CREDS"
         
         echo "📝 查看实时日志: tmux attach -t $TMUX_SESSION"

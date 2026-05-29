@@ -14,12 +14,15 @@ VERSION = "v2.00"
 _raw_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
 if not _raw_proxy:
     try:
-        with open("/etc/resolv.conf") as f:
-            for line in f:
-                if line.startswith("nameserver"):
-                    wsl_host = line.split()[1]
-                    _raw_proxy = f"http://{wsl_host}:7890"
-                    break
+        import subprocess
+        # Use bashrc's method: ip route show default | awk '/default/ {print $3}'
+        result = subprocess.run(
+            ["bash", "-c", "ip route show default | awk '/default/ {print $3}'"],
+            capture_output=True, text=True, timeout=5
+        )
+        wsl_host = result.stdout.strip()
+        if wsl_host:
+            _raw_proxy = f"http://{wsl_host}:7890"
     except Exception:
         pass
 PROXY = _raw_proxy if _raw_proxy else None
