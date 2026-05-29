@@ -479,14 +479,16 @@ def fetch_all_usdt_swap_instruments():
         return _instruments_cache["data"]
     from constants import OKX_BASE, PROXY, DEFAULT_INSTRUMENTS
     try:
-        url = f"{OKX_BASE}/api/v5/public/instruments?instType=SWAP"
-        with httpx.Client(timeout=10.0, headers={"User-Agent": "Mozilla/5.0"}, proxy=PROXY) as client:
+        url = f"{OKX_BASE}/api/v5/market/tickers?instType=SWAP"
+        with httpx.Client(timeout=15.0, headers={"User-Agent": "Mozilla/5.0"}, proxy=PROXY) as client:
             res = client.get(url).json()
             if res.get("code") == "0":
-                instruments = [d["instId"] for d in res["data"] if d["instId"].endswith("-USDT-SWAP")]
-                _instruments_cache["data"] = sorted(instruments)
+                tickers = [d for d in res["data"] if d["instId"].endswith("-USDT-SWAP")]
+                tickers.sort(key=lambda x: float(x.get("vol24h", 0) or 0), reverse=True)
+                instruments = [d["instId"] for d in tickers[:100]]
+                _instruments_cache["data"] = instruments
                 _instruments_cache["timestamp"] = now
-                logging.info("[OKX] Discovered %d USDT-SWAP pairs", len(instruments))
+                logging.info("[OKX] Discovered top %d USDT-SWAP pairs by volume", len(instruments))
                 return instruments
     except Exception as e:
         logging.warning("[OKX] Instrument fetch failed: %s", e)
