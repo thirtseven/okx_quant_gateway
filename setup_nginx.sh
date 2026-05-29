@@ -16,6 +16,35 @@ setup() {
         exit 1
     fi
 
+    WSL_IP=$(hostname -I | awk '{print $1}')
+    if [ -z "$WSL_IP" ]; then
+        echo "❌ 无法获取 WSL IP"
+        exit 1
+    fi
+
+    cat > "$CONF_FILE" << EOF
+pid /tmp/nginx.pid;
+error_log /tmp/nginx_error.log;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    access_log /tmp/nginx_access.log;
+    server {
+        listen 8080;
+        server_name okx.local localhost;
+        client_max_body_size 10m;
+        location / {
+            proxy_pass http://${WSL_IP}:5000;
+            proxy_set_header Host \$host;
+            proxy_http_version 1.1;
+            proxy_connect_timeout 30s;
+            proxy_read_timeout 60s;
+        }
+    }
+}
+EOF
+
     sudo cp "$CONF_FILE" "$NGINX_AVAILABLE"
 
     sudo ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
@@ -28,6 +57,8 @@ setup() {
         exit 1
     fi
 
+    unset LD_PRELOAD PROXYCHAINS_CONF_FILE http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+
     if command -v systemctl &>/dev/null && systemctl is-system-running &>/dev/null 2>&1; then
         sudo systemctl restart nginx
         sudo systemctl enable nginx
@@ -38,20 +69,19 @@ setup() {
     echo "✅ Nginx 反向代理已配置"
     echo ""
     echo "访问地址:"
-    LOCAL_IP=$(hostname -I | awk '{print $1}')
-    echo "  本地: http://localhost"
-    echo "  局域网: http://$LOCAL_IP"
+    echo "  http://okx.local:8080"
+    echo "  http://$WSL_IP:8080"
     echo ""
     echo "日志文件:"
-    echo "  访问日志: /var/log/nginx/okx_gateway_access.log"
-    echo "  错误日志: /var/log/nginx/okx_gateway_error.log"
+    echo "  访问日志: /tmp/nginx_access.log"
+    echo "  错误日志: /tmp/nginx_error.log"
 }
 
 status() {
     echo "📊 Nginx 状态:"
     echo ""
 
-    if systemctl is-active --quiet nginx; then
+    if pgrep -x nginx >/dev/null; then
         echo "  ✅ Nginx 运行中"
     else
         echo "  ❌ Nginx 未运行"
@@ -59,21 +89,15 @@ status() {
 
     echo ""
     echo "  配置文件:"
-    if [ -f "$NGINX_AVAILABLE" ]; then
-        echo "    ✅ $NGINX_AVAILABLE"
+    if [ -f "$CONF_FILE" ]; then
+        echo "    ✅ $CONF_FILE"
     else
         echo "    ❌ 未配置"
     fi
 
-    if [ -L "$NGINX_ENABLED" ]; then
-        echo "    ✅ $NGINX_ENABLED (已启用)"
-    else
-        echo "    ❌ 未启用"
-    fi
-
     echo ""
     echo "  端口监听:"
-    ss -tlnp | grep -E ":80|:5000" | awk '{print "    " $0}'
+    ss -tlnp | grep -E ":8080|:5000" | awk '{print "    " $0}'
 }
 
 remove() {
@@ -82,7 +106,7 @@ remove() {
     sudo rm -f "$NGINX_ENABLED"
     sudo rm -f "$NGINX_AVAILABLE"
 
-    sudo systemctl restart nginx
+    pkill nginx 2>/dev/null || true
 
     echo "✅ Nginx 反向代理已移除"
 }

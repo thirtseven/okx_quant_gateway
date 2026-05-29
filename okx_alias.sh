@@ -39,11 +39,18 @@ okx() {
             ;;
         nginx)
             case "$2" in
-                setup) cd "$OKX_DIR" && sudo ./setup_nginx.sh setup ;;
+                setup) cd "$OKX_DIR" && ./setup_nginx.sh setup ;;
                 status) cd "$OKX_DIR" && ./setup_nginx.sh status ;;
-                remove) cd "$OKX_DIR" && sudo ./setup_nginx.sh remove ;;
+                remove) cd "$OKX_DIR" && ./setup_nginx.sh remove ;;
                 *) echo "Usage: okx nginx {setup|status|remove}" ;;
             esac
+            ;;
+        url)
+            local ip=$(hostname -I | awk '{print $1}')
+            echo "网关地址:"
+            echo "  http://okx.local:8080"
+            echo "  http://$ip:8080"
+            echo "  http://$ip:5000"
             ;;
         test)
             cd "$OKX_DIR" && python3 test_gateway.py 2>&1 | tail -30
@@ -92,6 +99,7 @@ for k, v in status.items():
             echo "  open-settings  Open settings page in Windows browser"
             echo "  port-forward   Configure Windows port forwarding"
             echo "  settings       Show settings page URLs"
+            echo "  url            Show all gateway URLs"
             echo "  nginx          Nginx reverse proxy management"
             echo "  test           Run tests"
             echo "  backtest       Run backtest"
@@ -105,6 +113,7 @@ for k, v in status.items():
             echo "  okx start        # Start gateway"
             echo "  okx status       # Check status"
             echo "  okx open         # Open in browser"
+            echo "  okx url          # Show all URLs"
             echo "  okx pf           # Setup port forwarding"
             ;;
     esac
