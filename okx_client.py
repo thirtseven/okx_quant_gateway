@@ -291,7 +291,18 @@ def calculate_for_pair(pair, candles, genome):
     _, model_score, _ = v274_raw(candles)
     from indicators import compute_signal as indicator_score
     ind_sig, ind_long, ind_short = indicator_score(latest, genome)
-    signal = "LONG" if model_score > 0 else ("SHORT" if model_score < 0 else "HOLD")
+    regime = genome.get("regime_mode", "auto")
+    if regime in ("bull", "bear", "range"):
+        score_min = genome.get("regimes", {}).get(regime, {}).get("score_min", 1.0)
+    else:
+        score_min = 1.0
+    raw_score = max(ind_long, ind_short)
+    if model_score > 0 and raw_score >= score_min:
+        signal = "LONG"
+    elif model_score < 0 and raw_score >= score_min:
+        signal = "SHORT"
+    else:
+        signal = "HOLD"
     norm_long, norm_short = float(ind_long), float(ind_short)
 
     close_val = safe_val(latest.get("close"), 0.0)
