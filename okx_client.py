@@ -35,7 +35,7 @@ def report_failure(proxy=None):
 _candle_cache = {}
 _cache_lock = Lock()
 _CACHE_TTL_MS = 120000
-_MAX_CONCURRENT = 12  # OKX public rate limit: ~20req/2s, 12 concurrent is safe
+_MAX_CONCURRENT = 5  # OKX public rate limit: ~20req/2s, 5 concurrent is safe
 
 
 def pair_csv(pair):
