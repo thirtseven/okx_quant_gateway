@@ -276,7 +276,10 @@ function pollPositions(){
     if(stEl && d.strategy){
       const sm=d.strategy.score_min||d.strategy.score_threshold||'?';
       const rm=d.strategy.regime_mode||'auto';
-      stEl.textContent='v274 | '+rm+' | Score≥'+sm;
+      fetch('/api/strategy/model').then(r=>r.json()).then(m=>{
+        const version=m.loaded?m.version:'未加载';
+        stEl.textContent=version+' | '+rm+' | Score≥'+sm;
+      }).catch(()=>{stEl.textContent=rm+' | Score≥'+sm;});
     }
     if(!open.length){
       listEl.innerHTML='<div style="color:var(--muted);font-size:12px;padding:12px;">暂无持仓</div>';
@@ -431,7 +434,7 @@ function renderSignalList(d){
 
   const sorted = pairs.sort((a,b)=>b[1].norm_long - a[1].norm_long);
 
-  listEl.innerHTML='<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #3a2a0a;"><th style="text-align:left;padding:5px 3px;color:var(--muted);font-size:9px;">交易对</th><th style="text-align:center;padding:5px 3px;color:var(--muted);font-size:9px;">信号</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">v274得分</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">RSI14</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">收盘</th></tr></thead><tbody>'+
+  listEl.innerHTML='<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #3a2a0a;"><th style="text-align:left;padding:5px 3px;color:var(--muted);font-size:9px;">交易对</th><th style="text-align:center;padding:5px 3px;color:var(--muted);font-size:9px;">信号</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">模型得分</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">RSI14</th><th style="text-align:right;padding:5px 3px;color:var(--muted);font-size:9px;">收盘</th></tr></thead><tbody>'+
     sorted.map(([pair,s])=>{
       const score=s.norm_long>0?s.norm_long:-s.norm_short;
       const scoreStr=score.toFixed(1);
@@ -494,7 +497,7 @@ function pollSignals(){
           html+='特征:'+m.n_features+' | WR:'+(m.test_wr*100).toFixed(0)+'% PF:'+m.test_pf.toFixed(2)+'<br>';
           html+='持仓:'+m.trade.max_hold_bars+'bars | 仅做多';
         }else{
-          html+='v274 模型未加载';
+          html+='模型未加载';
         }
         html+='</div>';
         thEl.innerHTML=html;
