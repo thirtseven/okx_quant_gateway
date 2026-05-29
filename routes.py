@@ -480,7 +480,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         """Return fresh genome reflecting current strategy params."""
         return build_genome()
 
-    AUTH_EXEMPT = {"/api/health", "/gateway-ui", "/api/prices", "/"}
+    AUTH_EXEMPT = {"/api/health", "/gateway-ui", "/api/prices", "/", "/favicon.ico"}
 
     @app.errorhandler(500)
     @app.errorhandler(404)
@@ -512,6 +512,13 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
+
+    @app.route("/favicon.ico")
+    def favicon():
+        import os as _os
+        from flask import send_from_directory
+        favicon_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static")
+        return send_from_directory(favicon_path, "favicon.svg", mimetype="image/svg+xml")
 
     @app.route("/gateway-ui")
     def gateway_ui():
@@ -602,7 +609,8 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/strategy/model")
     def api_strategy_model():
-        from lgbm_bridge import get_params, is_loaded
+        from lgbm_bridge import get_params, is_loaded, _load_model
+        _load_model()
         if not is_loaded():
             return jsonify({"loaded": False})
         p = get_params()
@@ -1030,8 +1038,6 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     def api_strategy_params_summary():
         from strategy_manager import get_params_summary
         return jsonify(get_params_summary())
-
-    @app.route("/api/strategy/model")
 
     @app.route("/api/strategy/params/<path:param_path>", methods=["GET"])
     def api_strategy_param_get(param_path):
