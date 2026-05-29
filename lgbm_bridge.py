@@ -1,6 +1,6 @@
-"""v274 LightGBM Strategy Bridge — signal computation engine.
+"""LightGBM Strategy Bridge - Signal computation engine.
 
-Uses imported LightGBM model + sklearn preprocessor from data/v274_*.
+Delegates to model_manager for model lifecycle.
 Features built via ta library indicators. This is the ONLY signal path.
 """
 import json
@@ -8,7 +8,6 @@ import logging
 import os
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,21 @@ def _load_model():
     global _model, _preprocessor, _params, _features
     if _model is not None:
         return True
+    
     try:
+        from model_manager import get_active_model
+        container = get_active_model()
+        if container and container.loaded:
+            _model = container.model
+            _preprocessor = container.preprocessor
+            _params = container.params
+            _features = container.features
+            return True
+    except Exception as e:
+        logger.debug("[v274] Model manager not available, falling back to direct load: %s", e)
+    
+    try:
+        import lightgbm as lgb
         _model = lgb.Booster(model_file=MODEL_FILE)
         _params = json.load(open(PARAMS_FILE))
         features_raw = _params["features"]
@@ -73,7 +86,6 @@ def _build_features(df):
     result["atr_14"] = _calc_atr(high, low, close, 14)
     result["stoch_k"] = _calc_stoch(high, low, close, 14)
     result["stoch_d"] = pd.Series(result["stoch_k"]).rolling(3, min_periods=1).mean().values
-    # MACD
     ema12 = pd.Series(close).ewm(span=12, adjust=False).mean().values
     ema26 = pd.Series(close).ewm(span=26, adjust=False).mean().values
     result["macd_signal"] = pd.Series(ema12 - ema26).ewm(span=9, adjust=False).mean().values
@@ -172,8 +184,36 @@ def _calc_mfi(high, low, close, vol, period=14):
     return 100 - 100 / (1 + np.divide(pos_sum, neg_sum, out=np.ones_like(pos_sum), where=neg_sum != 0))
 
 
+def _calc_cci(high, low, close, period=20):
+    tp = (np.array(high) + np.array(low) + np.array(close)) / 3
+    sma_tp = pd.Series(tp).rolling(period, min_periods=1).mean().values
+    mad = pd.Series(np.abs(tp - sma_tp)).rolling(period, min_periods=1).mean().values
+    return (tp - sma_tp) / (0.015 * mad + 1e-9)
+
+
+def _calc_obv(close, vol):
+    obv = np.zeros(len(close))
+    v = np.array(vol)
+    for i in range(1, len(close)):
+        if close[i] > close[i-1]:
+            obv[i] = obv[i-1] + v[i]
+        elif close[i] < close[i-1]:
+            obv[i] = obv[i-1] - v[i]
+        else:
+            obv[i] = obv[i-1]
+    return obv
+
+
+def _calc_cmf(high, low, close, vol, period=20):
+    h, l, c = np.array(high), np.array(low), np.array(close)
+    mfm = ((c - l) - (h - c)) / (h - l + 1e-9)
+    mfv = mfm * np.array(vol)
+    return pd.Series(mfv).rolling(period, min_periods=1).sum().values / (
+        pd.Series(np.array(vol)).rolling(period, min_periods=1).sum().values + 1e-9)
+
+
 def compute_signal(candles):
-    """Single-pair prediction — returns raw score."""
+    """Single-pair prediction - returns raw score."""
     if not _load_model():
         return "HOLD", 0.0, 0.0
     if len(candles) < 50:
@@ -203,34 +243,6 @@ def compute_signal(candles):
 
 
 def compute_batch_signals(pairs_candles):
-    """Placeholder for batch computation."""
-    return {}
-def _calc_cci(high, low, close, period=20):
-    tp = (np.array(high) + np.array(low) + np.array(close)) / 3
-    sma_tp = pd.Series(tp).rolling(period, min_periods=1).mean().values
-    mad = pd.Series(np.abs(tp - sma_tp)).rolling(period, min_periods=1).mean().values
-    return (tp - sma_tp) / (0.015 * mad + 1e-9)
-
-
-def _calc_obv(close, vol):
-    obv = np.zeros(len(close))
-    v = np.array(vol)
-    for i in range(1, len(close)):
-        if close[i] > close[i-1]:
-            obv[i] = obv[i-1] + v[i]
-        elif close[i] < close[i-1]:
-            obv[i] = obv[i-1] - v[i]
-        else:
-            obv[i] = obv[i-1]
-    return obv
-
-
-def _calc_cmf(high, low, close, vol, period=20):
-    h, l, c = np.array(high), np.array(low), np.array(close)
-    mfm = ((c - l) - (h - c)) / (h - l + 1e-9)
-    mfv = mfm * np.array(vol)
-    return pd.Series(mfv).rolling(period, min_periods=1).sum().values / (
-        pd.Series(np.array(vol)).rolling(period, min_periods=1).sum().values + 1e-9)
     """Batch: predict all pairs, normalize scores, rank top-N as LONG."""
     if not _load_model():
         return {}
@@ -253,32 +265,3 @@ def _calc_cmf(high, low, close, vol, period=20):
             signal = "SHORT"
         results[pair] = {"signal": signal, "norm_long": normalized, "norm_short": 0.0, "raw": raw}
     return results
-    if len(candles) < 50:
-        return "HOLD", 0.0, 0.0
-    df = pd.DataFrame(candles[-300:])
-    fb = _build_features(df)
-    if fb is None or len(fb) == 0:
-        return "HOLD", 0.0, 0.0
-    avail = [f for f in _features if f in fb.columns]
-    if len(avail) < 10:
-        logger.warning("[v274] Only %d features available", len(avail))
-        return "HOLD", 0.0, 0.0
-    X = fb[avail].values.astype(np.float32)
-    for j in range(X.shape[1]):
-        mask = np.isnan(X[:, j])
-        if mask.any():
-            X[mask, j] = np.nanmedian(X[:, j])
-    try:
-        if _preprocessor is not None:
-            scaler = _preprocessor if hasattr(_preprocessor, "transform") else _preprocessor.get("scaler", None)
-            if scaler is not None:
-                X = scaler.transform(X)
-        pred = _model.predict(X, num_iteration=_model.best_iteration)[-1]
-        if pred > 0:
-            return "LONG", float(pred), 0.0
-        elif pred < 0:
-            return "SHORT", 0.0, float(abs(pred))
-        return "HOLD", 0.0, 0.0
-    except Exception as e:
-        logger.error("[v274] predict error: %s", e)
-        return "HOLD", 0.0, 0.0

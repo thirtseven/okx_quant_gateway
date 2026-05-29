@@ -1154,6 +1154,39 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         except Exception as e:
             return jsonify({"ok": False, "msg": str(e)}), 400
         return jsonify({"ok": True, "results": results})
+
+    @app.route("/api/models")
+    def api_models_list():
+        from model_manager import list_models
+        return jsonify({"models": list_models()})
+
+    @app.route("/api/models/active")
+    def api_models_active():
+        from model_manager import get_active_model
+        model = get_active_model()
+        if model:
+            return jsonify({"ok": True, "model": model.get_info()})
+        return jsonify({"ok": False, "msg": "No active model"})
+
+    @app.route("/api/models/active", methods=["PUT"])
+    def api_models_set_active():
+        from model_manager import set_active_model
+        data = request.get_json()
+        if not data or "name" not in data:
+            return jsonify({"ok": False, "msg": "Missing model name"}), 400
+        if set_active_model(data["name"]):
+            return jsonify({"ok": True, "msg": f"Active model set to {data['name']}"})
+        return jsonify({"ok": False, "msg": f"Model '{data['name']}' not found"}), 404
+
+    @app.route("/api/models/reload", methods=["POST"])
+    def api_models_reload():
+        from model_manager import reload_model
+        data = request.get_json() or {}
+        name = data.get("name")
+        if reload_model(name):
+            return jsonify({"ok": True, "msg": "Model reloaded"})
+        return jsonify({"ok": False, "msg": "Failed to reload model"}), 500
+
     @app.route("/gateway-ui-test")
     def gateway_ui_test():
         import os
