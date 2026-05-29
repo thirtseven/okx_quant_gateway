@@ -27,8 +27,15 @@ okx() {
         settings)
             local ip=$(hostname -I | awk '{print $1}')
             echo "设置页面:"
-            echo "  http://localhost:5000/settings"
             echo "  http://$ip:5000/settings"
+            ;;
+        open)
+            local ip=$(hostname -I | awk '{print $1}')
+            cmd.exe /c "start http://$ip:5000" 2>/dev/null || echo "请手动打开: http://$ip:5000"
+            ;;
+        open-settings)
+            local ip=$(hostname -I | awk '{print $1}')
+            cmd.exe /c "start http://$ip:5000/settings" 2>/dev/null || echo "请手动打开: http://$ip:5000/settings"
             ;;
         nginx)
             case "$2" in
@@ -81,6 +88,8 @@ for k, v in status.items():
             echo "  restart        Restart gateway"
             echo "  status         Show gateway status"
             echo "  log            Attach to logs (Ctrl+B D to detach)"
+            echo "  open           Open gateway in Windows browser"
+            echo "  open-settings  Open settings page in Windows browser"
             echo "  port-forward   Configure Windows port forwarding"
             echo "  settings       Show settings page URLs"
             echo "  nginx          Nginx reverse proxy management"
@@ -95,6 +104,7 @@ for k, v in status.items():
             echo "Examples:"
             echo "  okx start        # Start gateway"
             echo "  okx status       # Check status"
+            echo "  okx open         # Open in browser"
             echo "  okx pf           # Setup port forwarding"
             ;;
     esac
