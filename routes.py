@@ -614,11 +614,37 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         if not is_loaded():
             return jsonify({"loaded": False})
         p = get_params()
-        return jsonify({"loaded": True, "version": p.get("version", "v315"),
-                        "champion": p.get("champion", "GA"),
-                        "model": p.get("model_params", {}),
-                        "trade": p.get("trade_params", {}),
-                        "n_features": len(p.get("features", "")) if isinstance(p.get("features"), list) else p.get("features", {}).get("selected", 0)})
+        features = p.get("features", {})
+        if isinstance(features, dict):
+            n_features = features.get("selected", 0)
+            feature_names = features.get("names", [])
+        else:
+            n_features = len(features) if isinstance(features, list) else 0
+            feature_names = features if isinstance(features, list) else []
+        
+        test_metrics = p.get("test", {})
+        
+        return jsonify({
+            "loaded": True,
+            "version": p.get("version", "v315"),
+            "champion": p.get("champion", "GA"),
+            "model": {
+                "max_depth": p.get("max_depth", 2),
+                "n_estimators": p.get("n_estimators", 100),
+                "num_leaves": p.get("num_leaves", 4),
+            },
+            "trade": {
+                "max_hold_bars": p.get("max_hold_bars", 12),
+                "position": "long_only",
+            },
+            "n_features": n_features,
+            "feature_names": feature_names,
+            "test_wr": test_metrics.get("wr", 0),
+            "test_pf": test_metrics.get("pf", 0),
+            "test_corr": test_metrics.get("corr", 0),
+            "test_trades": test_metrics.get("trades", 0),
+            "fitness": p.get("best_fitness", 0),
+        })
 
     @app.route("/api/threshold", methods=["PATCH"])
     def api_threshold():
