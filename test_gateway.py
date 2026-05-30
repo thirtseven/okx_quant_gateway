@@ -356,7 +356,7 @@ class TestCSVStorage(unittest.TestCase):
     def test_pair_csv_format(self):
         path = pair_csv("BTC-USDT-SWAP", self.tmpdir)
         self.assertIn("BTC_USDT_SWAP", path)
-        self.assertTrue(path.endswith("_15m.csv"))
+        self.assertTrue(path.endswith("_4H.csv"))
         print("[PASS] test_pair_csv_format")
 
 
@@ -381,9 +381,9 @@ class TestConstants(unittest.TestCase):
             self.assertGreater(params.get("atr_tp", 0), 0)
         print("[PASS] test_genome_values_sane")
 
-    def test_candle_bar_15m(self):
-        self.assertEqual(CANDLE_BAR, "15m")
-        print("[PASS] test_candle_bar_15m")
+    def test_candle_bar_4h(self):
+        self.assertEqual(CANDLE_BAR, "4H")
+        print("[PASS] test_candle_bar_4h")
 
     def test_version_exists(self):
         self.assertTrue(VERSION)
