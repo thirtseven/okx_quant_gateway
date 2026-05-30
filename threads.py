@@ -140,6 +140,7 @@ def _v(val, default=None):
 def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_state_func):
     import indicators
     from constants import build_genome
+    from state import mark_dirty
     CIRCUIT_BREAK_LOSSES = 5
     CIRCUIT_BREAK_DURATION = 900
     MAX_OPEN_PER_TICK = 999999  # No per-tick limit — controlled via pair cooldown
@@ -371,6 +372,9 @@ def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_
                         notify_signal_func(state_ref, *close_info["notify_args"])
                     for open_info in positions_to_open:
                         notify_signal_func(state_ref, *open_info["notify_args"])
+
+                    if positions_to_close or positions_to_open:
+                        mark_dirty()
 
                 if not signals:
                     signals = [f"[{now}] No signals"]

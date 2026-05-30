@@ -657,13 +657,46 @@ class TestFetchCandlesOrder(unittest.TestCase):
         print("[PASS] test_fetch_candles_reversed_order")
 
 
-def run_tests():
-    print("=" * 70)
-    print("  OKX Quantitative Trading Gateway - Test Suite v2")
-    print("=" * 70)
-    print(f"  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70)
+class TestStatePersistence(unittest.TestCase):
+    """Verify that state persistence includes position close data."""
 
+    def test_pair_last_closed_in_persist_keys(self):
+        from state import STATE_PERSIST_KEYS
+        self.assertIn("pair_last_closed", STATE_PERSIST_KEYS,
+                       "pair_last_closed must be persisted for cooldown survival")
+
+    def test_position_history_in_persist_keys(self):
+        from state import STATE_PERSIST_KEYS
+        self.assertIn("position_history", STATE_PERSIST_KEYS)
+        self.assertIn("open_positions", STATE_PERSIST_KEYS)
+        self.assertIn("consecutive_losses", STATE_PERSIST_KEYS)
+
+    def test_mark_dirty_and_save(self):
+        import tempfile, json
+        from state import mark_dirty, is_dirty, save_state, _state_dirty, STATE_PERSIST_KEYS
+        _state_dirty.clear()
+        self.assertFalse(is_dirty())
+        mark_dirty()
+        self.assertTrue(is_dirty())
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            tmp_path = f.name
+        try:
+            import state as state_mod
+            orig = state_mod.GATEWAY_STATE_FILE
+            state_mod.GATEWAY_STATE_FILE = tmp_path
+            state_mod.state["pair_last_closed"] = {"BTC-USDT-SWAP": 1234567890.0}
+            save_state()
+            self.assertFalse(is_dirty())
+            with open(tmp_path) as f:
+                saved = json.load(f)
+            self.assertIn("pair_last_closed", saved)
+            self.assertAlmostEqual(saved["pair_last_closed"]["BTC-USDT-SWAP"], 1234567890.0)
+            state_mod.GATEWAY_STATE_FILE = orig
+        finally:
+            os.unlink(tmp_path)
+
+
+def run_tests():
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
 
@@ -682,6 +715,7 @@ def run_tests():
         TestFetchOKXTickerMocked,
         TestFetchCandlesMocked,
         TestFetchCandlesOrder,
+        TestStatePersistence,
     ]
 
     for cls in test_classes:

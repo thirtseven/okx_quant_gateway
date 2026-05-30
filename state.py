@@ -51,6 +51,7 @@ STATE_PERSIST_KEYS = [
     "mode", "safe_users", "trading_pairs",
     "strategy_active", "open_positions", "position_history", "pending_signals",
     "consecutive_losses", "circuit_broken", "circuit_broken_until",
+    "pair_last_closed",
 ]
 
 
