@@ -43,12 +43,12 @@ class TestJSONSafety(unittest.TestCase):
         self.assertIn("NaN", result)
 
     def test_safe_val_filters_nan(self):
-        from indicators import safe_val
+        from indicators.calculator import safe_val
         self.assertEqual(safe_val(float("nan"), 42), 42)
         self.assertEqual(safe_val(3.14, 0), 3.14)
 
     def test_safe_get_filters_nan(self):
-        from indicators import _safe_get
+        from indicators.calculator import _safe_get
         self.assertEqual(_safe_get({"v": float("nan")}, "v", 50), 50)
         self.assertEqual(_safe_get({"v": 3.14}, "v", 0), 3.14)
 
@@ -145,7 +145,7 @@ class TestCSRFRoundtrip(unittest.TestCase):
 
 class TestCredentialRoundtrip(unittest.TestCase):
     def test_encrypt_decrypt(self):
-        from credential_manager import _simple_encrypt, _simple_decrypt
+        from auth.credentials import _simple_encrypt, _simple_decrypt
         plain = "test_secret_123!@#"
         enc = _simple_encrypt(plain)
         self.assertIsNotNone(enc)
@@ -154,26 +154,26 @@ class TestCredentialRoundtrip(unittest.TestCase):
         self.assertEqual(dec, plain)
 
     def test_empty_handled(self):
-        from credential_manager import _simple_encrypt, _simple_decrypt
+        from auth.credentials import _simple_encrypt, _simple_decrypt
         self.assertEqual(_simple_encrypt(""), "")
         self.assertEqual(_simple_decrypt(""), "")
 
 
 class TestGenomeBackwardsCompat(unittest.TestCase):
     def test_leverage_present(self):
-        from constants import build_genome
+        from core.constants import build_genome
         g = build_genome()
         self.assertIn("leverage", g)
         self.assertGreater(g["leverage"], 0)
 
     def test_fee_present(self):
-        from constants import build_genome
+        from core.constants import build_genome
         g = build_genome()
         self.assertIn("fee", g)
         self.assertGreater(g["fee"], 0)
 
     def test_regimes_present(self):
-        from constants import build_genome
+        from core.constants import build_genome
         g = build_genome()
         self.assertIn("regimes", g)
         for r in ("bull", "bear", "range"):
@@ -183,13 +183,13 @@ class TestGenomeBackwardsCompat(unittest.TestCase):
 
 class TestThreadSafety(unittest.TestCase):
     def test_state_lock_no_deadlock(self):
-        from state import state_lock
+        from core.state import state_lock
         acquired = state_lock.acquire(timeout=2)
         self.assertTrue(acquired)
         state_lock.release()
 
     def test_concurrent_reads(self):
-        from state import state, state_lock
+        from core.state import state, state_lock
         errors = []
         def reader():
             try:
@@ -207,7 +207,7 @@ class TestThreadSafety(unittest.TestCase):
 
 class TestSignalComputation(unittest.TestCase):
     def test_compute_signal_valid(self):
-        from indicators import compute_signal
+        from indicators.calculator import compute_signal
         ind = {
             "close": 60000, "ema_25": 59500, "ema_50": 58000,
             "atr_14": 500, "rsi_14": 55, "macd_hist": 0.5,
@@ -228,7 +228,7 @@ class TestSignalComputation(unittest.TestCase):
         self.assertIsInstance(ns, float)
 
     def test_no_nan_in_scores(self):
-        from indicators import compute_signal
+        from indicators.calculator import compute_signal
         ind = {
             "close": 100, "ema_25": 100, "ema_50": 100,
             "atr_14": 0.001, "rsi_14": 50, "macd_hist": 0,
@@ -257,7 +257,7 @@ class TestStoragePandas(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_load_candles(self):
-        from storage import load_candles, pair_csv
+        from core.storage import load_candles, pair_csv
         import pandas as pd
         path = pair_csv("TEST-X-USDT-SWAP", module_data_dir=self.tmpdir)
         df = pd.DataFrame({

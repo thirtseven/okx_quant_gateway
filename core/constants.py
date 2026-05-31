@@ -33,7 +33,7 @@ CANDLE_BAR = "4H"
 CANDLE_LIMIT = 200
 INDICATOR_WARMUP = 300
 
-from strategy_manager import (
+from strategy.manager import (
     get_strategy_params, init_strategy_params,
     get_regime_mode, get_all_regimes, get_general_params,
 )

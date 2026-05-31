@@ -14,15 +14,15 @@ import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from indicators import (
+from indicators.calculator import (
     calc_ema, calc_rsi, calc_macd, calc_bb, calc_stoch, calc_atr,
     calc_all_indicators, get_latest_indicators, compute_signal,
 )
-from storage import pair_csv, load_candles, append_candles
-from constants import build_genome, CANDLE_BAR, CANDLE_LIMIT, VERSION, STRATEGY_CONFIG
-from okx_client import _validate_candle, calculate_for_pair, _prec
+from core.storage import pair_csv, load_candles, append_candles
+from core.constants import build_genome, CANDLE_BAR, CANDLE_LIMIT, VERSION, STRATEGY_CONFIG
+from exchange.client import _validate_candle, calculate_for_pair, _prec
 
 
 _TEST_FLAT_GENOME = {
@@ -401,36 +401,36 @@ class TestPrec(unittest.TestCase):
 
 class TestNotificationLogic(unittest.TestCase):
     def test_notify_signal_no_users(self):
-        from notifications import notify_signal
+        from notification.email import notify_signal
         mock_state = {"safe_users": []}
-        with patch("notifications._is_configured", return_value=False):
-            with patch("notifications.send_trade_notification") as mock_send:
+        with patch("notification.email._is_configured", return_value=False):
+            with patch("notification.email.send_trade_notification") as mock_send:
                 notify_signal(mock_state, "BTC-USDT-SWAP", "LONG", 60000.0, "OPEN")
                 mock_send.assert_not_called()
         print("[PASS] test_notify_signal_no_users")
 
     def test_notify_signal_hold_skipped(self):
-        from notifications import notify_signal
+        from notification.email import notify_signal
         mock_state = {"safe_users": [{"email": "test@test.com"}]}
-        with patch("notifications.send_trade_notification") as mock_send:
+        with patch("notification.email.send_trade_notification") as mock_send:
             notify_signal(mock_state, "BTC-USDT-SWAP", "LONG", 60000.0, "HOLD")
             mock_send.assert_not_called()
         print("[PASS] test_notify_signal_hold_skipped")
 
     def test_notify_signal_open_sends(self):
-        from notifications import notify_signal
+        from notification.email import notify_signal
         mock_state = {"safe_users": [{"email": "test@test.com"}], "genome": {}, "indicator_cache": {}, "open_positions": [], "last_update": "now"}
-        with patch("notifications._is_configured", return_value=True):
-            with patch("notifications.send_trade_notification", return_value=True) as mock_send:
+        with patch("notification.email._is_configured", return_value=True):
+            with patch("notification.email.send_trade_notification", return_value=True) as mock_send:
                 notify_signal(mock_state, "BTC-USDT-SWAP", "LONG", 60000.0, "OPEN")
                 mock_send.assert_called_once()
         print("[PASS] test_notify_signal_open_sends")
 
     def test_notify_deduplication(self):
-        from notifications import notify_signal
+        from notification.email import notify_signal
         mock_state = {"safe_users": [{"email": "a@test.com"}, {"email": "a@test.com"}], "genome": {}, "indicator_cache": {}, "open_positions": [], "last_update": "now"}
-        with patch("notifications._is_configured", return_value=True):
-            with patch("notifications.send_trade_notification", return_value=True) as mock_send:
+        with patch("notification.email._is_configured", return_value=True):
+            with patch("notification.email.send_trade_notification", return_value=True) as mock_send:
                 notify_signal(mock_state, "BTC-USDT-SWAP", "LONG", 60000.0, "OPEN")
                 self.assertEqual(mock_send.call_count, 1)
         print("[PASS] test_notify_deduplication")
@@ -538,7 +538,7 @@ class TestIndicatorEdgeCases(unittest.TestCase):
 
 class TestFetchOKXTickerMocked(unittest.TestCase):
     def test_success(self):
-        from okx_client import fetch_okx_ticker
+        from exchange.client import fetch_okx_ticker
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "code": "0",
@@ -556,7 +556,7 @@ class TestFetchOKXTickerMocked(unittest.TestCase):
         print("[PASS] test_fetch_okx_ticker_success")
 
     def test_api_error_returns_none(self):
-        from okx_client import fetch_okx_ticker
+        from exchange.client import fetch_okx_ticker
         mock_response = MagicMock()
         mock_response.json.return_value = {"code": "500", "data": None}
         mock_client = AsyncMock()
@@ -570,7 +570,7 @@ class TestFetchOKXTickerMocked(unittest.TestCase):
         print("[PASS] test_fetch_okx_ticker_api_error")
 
     def test_network_error_returns_none(self):
-        from okx_client import fetch_okx_ticker
+        from exchange.client import fetch_okx_ticker
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=Exception("network error"))
 
@@ -584,7 +584,7 @@ class TestFetchOKXTickerMocked(unittest.TestCase):
 
 class TestFetchCandlesMocked(unittest.TestCase):
     def test_success(self):
-        from okx_client import fetch_candles
+        from exchange.client import fetch_candles
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "code": "0",
@@ -606,7 +606,7 @@ class TestFetchCandlesMocked(unittest.TestCase):
         print("[PASS] test_fetch_candles_success")
 
     def test_api_error(self):
-        from okx_client import fetch_candles
+        from exchange.client import fetch_candles
         mock_response = MagicMock()
         mock_response.json.return_value = {"code": "500", "data": None}
         mock_client = AsyncMock()
@@ -620,7 +620,7 @@ class TestFetchCandlesMocked(unittest.TestCase):
         print("[PASS] test_fetch_candles_api_error")
 
     def test_empty_data(self):
-        from okx_client import fetch_candles
+        from exchange.client import fetch_candles
         mock_response = MagicMock()
         mock_response.json.return_value = {"code": "0", "data": []}
         mock_client = AsyncMock()
@@ -636,7 +636,7 @@ class TestFetchCandlesMocked(unittest.TestCase):
 
 class TestFetchCandlesOrder(unittest.TestCase):
     def test_reversed_order_sorted(self):
-        from okx_client import fetch_candles
+        from exchange.client import fetch_candles
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "code": "0",
@@ -661,19 +661,19 @@ class TestStatePersistence(unittest.TestCase):
     """Verify that state persistence includes position close data."""
 
     def test_pair_last_closed_in_persist_keys(self):
-        from state import STATE_PERSIST_KEYS
+        from core.state import STATE_PERSIST_KEYS
         self.assertIn("pair_last_closed", STATE_PERSIST_KEYS,
                        "pair_last_closed must be persisted for cooldown survival")
 
     def test_position_history_in_persist_keys(self):
-        from state import STATE_PERSIST_KEYS
+        from core.state import STATE_PERSIST_KEYS
         self.assertIn("position_history", STATE_PERSIST_KEYS)
         self.assertIn("open_positions", STATE_PERSIST_KEYS)
         self.assertIn("consecutive_losses", STATE_PERSIST_KEYS)
 
     def test_mark_dirty_and_save(self):
         import tempfile, json
-        from state import mark_dirty, is_dirty, save_state, _state_dirty, STATE_PERSIST_KEYS
+        from core.state import mark_dirty, is_dirty, save_state, _state_dirty, STATE_PERSIST_KEYS
         _state_dirty.clear()
         self.assertFalse(is_dirty())
         mark_dirty()
@@ -681,7 +681,7 @@ class TestStatePersistence(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             tmp_path = f.name
         try:
-            import state as state_mod
+            import core.state as state_mod
             orig = state_mod.GATEWAY_STATE_FILE
             state_mod.GATEWAY_STATE_FILE = tmp_path
             state_mod.state["pair_last_closed"] = {"BTC-USDT-SWAP": 1234567890.0}

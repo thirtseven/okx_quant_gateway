@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-from credential_manager import init_credentials, apply_credentials_to_env
+from auth.credentials import init_credentials, apply_credentials_to_env
 init_credentials()
 apply_credentials_to_env()
 
-from network_manager import init_network, cleanup_network
+from exchange.network import init_network, cleanup_network
 if init_network():
     logger.info("Network subnet initialized")
 else:
@@ -26,12 +26,12 @@ else:
 
 atexit.register(cleanup_network)
 
-from constants import (
+from core.constants import (
     PROXY, PROXIES, OKX_BASE, CANDLE_BAR, CANDLE_LIMIT,
     INDICATOR_WARMUP, DEFAULT_INSTRUMENTS, build_genome,
 )
-from state import state, state_lock, save_state, load_state
-from notifications import notify_signal as _notify_signal, send_trade_notification
+from core.state import state, state_lock, save_state, load_state
+from notification.email import notify_signal as _notify_signal, send_trade_notification
 
 STATE_DIRTY_REF = [False]
 
@@ -59,8 +59,8 @@ def notify_signal(*args, **kwargs):
         else:
             return
 
-from storage import pair_csv, load_candles, append_candles
-from indicators import (
+from core.storage import pair_csv, load_candles, append_candles
+from indicators.calculator import (
     calc_ema, calc_rsi, calc_macd, calc_bb, calc_stoch, calc_atr,
     calc_all_indicators, get_latest_indicators,
     compute_signal as _compute_signal,
@@ -70,7 +70,7 @@ from indicators import (
 def compute_signal(ind, genome=None):
     return _compute_signal(ind, genome or build_genome())
 
-from okx_client import (
+from exchange.client import (
     fetch_candles, fetch_pair_candles, fetch_okx_ticker,
     calculate_for_pair as _calculate_for_pair, fetch_and_calculate_all, fetch_all_prices,
 )
@@ -81,14 +81,14 @@ MAX_POSITIONS = 999999  # No limit — overtrading controlled via cooldown penal
 CIRCUIT_BREAK_LOSSES = 5
 CIRCUIT_BREAK_DURATION = 900
 
-from constants import NOTIFY_SENDER, NOTIFY_AUTH_CODE, NOTIFY_ENABLED
+from core.constants import NOTIFY_SENDER, NOTIFY_AUTH_CODE, NOTIFY_ENABLED
 
 from concurrent.futures import ThreadPoolExecutor
-import threads
+import workers.threads as threads
 
 load_state()
 
-from okx_client import fetch_all_usdt_swap_instruments as _fetch_all_usdt_swap
+from exchange.client import fetch_all_usdt_swap_instruments as _fetch_all_usdt_swap
 
 if not state.get("trading_pairs"):
     all_instruments = _fetch_all_usdt_swap()
@@ -101,7 +101,7 @@ else:
     logger.info("Loaded %d trading_pairs from saved state", len(state['trading_pairs']))
 
 from flask import Flask
-import routes
+import api.routes as routes
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(24)
@@ -147,13 +147,13 @@ threads.start_strategy_tick(state_ref=state, state_lock=state_lock, genome=build
                             notify_signal_func=notify_signal, save_state_func=save_state)
 threads.start_state_persistor(state_ref=state, state_lock=state_lock, save_state_func=save_state)
 
-from model_manager import get_manager as get_model_manager
+from model.manager import get_manager as get_model_manager
 model_mgr = get_model_manager()
 model_mgr.start_watcher(interval=30)
 logger.info("Model watcher started (30s interval)")
 
 if __name__ == "__main__":
-    from credential_manager import get_credential_status
+    from auth.credentials import get_credential_status
     creds = get_credential_status()
     configured_count = sum(1 for v in creds.values() if v)
 

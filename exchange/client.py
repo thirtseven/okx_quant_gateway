@@ -15,8 +15,8 @@ from threading import Lock
 
 import httpx
 
-from constants import OKX_BASE, CANDLE_BAR, CANDLE_LIMIT, PROXY
-from indicators import calc_all_indicators, get_latest_indicators, safe_val
+from core.constants import OKX_BASE, CANDLE_BAR, CANDLE_LIMIT, PROXY
+from indicators.calculator import calc_all_indicators, get_latest_indicators, safe_val
 
 
 # Statistics tracking
@@ -39,22 +39,22 @@ _MAX_CONCURRENT = 5  # OKX public rate limit: ~20req/2s, 5 concurrent is safe
 
 
 def pair_csv(pair):
-    from storage import pair_csv as _pcsv
+    from core.storage import pair_csv as _pcsv
     return _pcsv(pair)
 
 
 def load_candles(pair):
-    from storage import load_candles as _lc
+    from core.storage import load_candles as _lc
     return _lc(pair)
 
 
 def append_candles(pair, candles):
-    from storage import append_candles as _ac
+    from core.storage import append_candles as _ac
     return _ac(pair, candles)
 
 
 def warmup_cache_from_csv(pairs):
-    from storage import warmup_cache_from_csvs
+    from core.storage import warmup_cache_from_csvs
     warmed = 0
     for pair, rows in warmup_cache_from_csvs(pairs).items():
         if rows:
@@ -287,9 +287,9 @@ def calculate_for_pair(pair, candles, genome):
     indicators = calc_all_indicators(candles, pair=pair)
     latest = get_latest_indicators(indicators)
     # v274 model for direction, indicator scores for granular ranking
-    from lgbm_bridge import compute_signal as v274_raw
+    from indicators.lgbm import compute_signal as v274_raw
     _, model_score, _ = v274_raw(candles)
-    from indicators import compute_signal as indicator_score
+    from indicators.calculator import compute_signal as indicator_score
     ind_sig, ind_long, ind_short = indicator_score(latest, genome)
     regime = genome.get("regime_mode", "auto")
     if regime in ("bull", "bear", "range"):
@@ -488,7 +488,7 @@ def fetch_all_usdt_swap_instruments():
     now = time.time()
     if _instruments_cache["data"] is not None and (now - _instruments_cache["timestamp"]) < _INSTRUMENTS_CACHE_TTL:
         return _instruments_cache["data"]
-    from constants import OKX_BASE, PROXY, DEFAULT_INSTRUMENTS
+    from core.constants import OKX_BASE, PROXY, DEFAULT_INSTRUMENTS
     try:
         url = f"{OKX_BASE}/api/v5/market/tickers?instType=SWAP"
         with httpx.Client(timeout=15.0, headers={"User-Agent": "Mozilla/5.0"}, proxy=PROXY) as client:

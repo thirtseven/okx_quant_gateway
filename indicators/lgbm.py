@@ -29,7 +29,7 @@ def _load_model():
         return True
     
     try:
-        from model_manager import get_active_model
+        from model.manager import get_active_model
         container = get_active_model()
         if container and container.loaded:
             _model = container.model

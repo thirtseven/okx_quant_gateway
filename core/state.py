@@ -6,7 +6,7 @@ import os
 import threading
 from typing import Any
 
-from credential_manager import _simple_decrypt, _simple_encrypt
+from auth.credentials import _simple_decrypt, _simple_encrypt
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)

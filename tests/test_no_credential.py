@@ -26,34 +26,34 @@ class TestCredentialManager(unittest.TestCase):
     """Test credential management without external dependencies."""
 
     def setUp(self):
-        from credential_manager import _credentials_cache, _initialized
+        from auth.credentials import _credentials_cache, _initialized
         _credentials_cache.clear()
         _initialized = False
 
     def test_init_credentials_empty(self):
-        from credential_manager import init_credentials, get_credential_status
+        from auth.credentials import init_credentials, get_credential_status
         init_credentials()
         status = get_credential_status()
         self.assertFalse(any(status.values()))
 
     def test_set_and_get_credential(self):
-        from credential_manager import set_credential, get_credential, init_credentials
+        from auth.credentials import set_credential, get_credential, init_credentials
         init_credentials()
         self.assertTrue(set_credential("smtp_sender", "test@example.com"))
         self.assertEqual(get_credential("smtp_sender"), "test@example.com")
 
     def test_invalid_credential_type(self):
-        from credential_manager import set_credential
+        from auth.credentials import set_credential
         self.assertFalse(set_credential("invalid_type", "value"))
 
     def test_remove_credential(self):
-        from credential_manager import set_credential, remove_credential, get_credential
+        from auth.credentials import set_credential, remove_credential, get_credential
         set_credential("smtp_sender", "test@example.com")
         self.assertTrue(remove_credential("smtp_sender"))
         self.assertIsNone(get_credential("smtp_sender"))
 
     def test_smtp_config(self):
-        from credential_manager import set_credential, get_smtp_config
+        from auth.credentials import set_credential, get_smtp_config
         config = get_smtp_config()
         self.assertFalse(config["enabled"])
         self.assertIsNone(config["sender"])
@@ -65,7 +65,7 @@ class TestCredentialManager(unittest.TestCase):
         self.assertEqual(config["sender"], "test@example.com")
 
     def test_db_config(self):
-        from credential_manager import set_credential, get_db_config
+        from auth.credentials import set_credential, get_db_config
         config = get_db_config()
         self.assertEqual(config["host"], "127.0.0.1")
         self.assertIsNone(config["password"])
@@ -75,7 +75,7 @@ class TestCredentialManager(unittest.TestCase):
         self.assertEqual(config["password"], "secret123")
 
     def test_okx_config(self):
-        from credential_manager import set_credential, get_okx_config
+        from auth.credentials import set_credential, get_okx_config
         config = get_okx_config()
         self.assertFalse(config["configured"])
 
@@ -84,7 +84,7 @@ class TestCredentialManager(unittest.TestCase):
         self.assertTrue(config["configured"])
 
     def test_apply_credentials_to_env(self):
-        from credential_manager import set_credential, apply_credentials_to_env
+        from auth.credentials import set_credential, apply_credentials_to_env
         set_credential("smtp_sender", "test@example.com")
         set_credential("smtp_auth_code", "auth123")
         apply_credentials_to_env()
@@ -142,7 +142,7 @@ class TestDataInjection(unittest.TestCase):
             self.assertGreater(candle["high"], candle["low"])
 
     def test_indicator_calculation(self):
-        from indicators import calc_all_indicators, get_latest_indicators
+        from indicators.calculator import calc_all_indicators, get_latest_indicators
         candles = self.test_data["candles"]
         closes = [c["close"] for c in candles]
         highs = [c["high"] for c in candles]
@@ -157,8 +157,8 @@ class TestDataInjection(unittest.TestCase):
         self.assertIsNotNone(latest)
 
     def test_signal_computation(self):
-        from indicators import calc_all_indicators, get_latest_indicators, compute_signal
-        from constants import build_genome
+        from indicators.calculator import calc_all_indicators, get_latest_indicators, compute_signal
+        from core.constants import build_genome
 
         candles = self.test_data["candles"]
         indicators = calc_all_indicators(candles)
@@ -176,7 +176,7 @@ class TestDataInjection(unittest.TestCase):
     def test_storage_operations(self):
         import tempfile
         import shutil
-        from storage import pair_csv, load_candles, append_candles
+        from core.storage import pair_csv, load_candles, append_candles
 
         temp_dir = tempfile.mkdtemp()
         try:
@@ -199,13 +199,13 @@ class TestGatewayStartup(unittest.TestCase):
     def test_import_without_credentials(self):
         import shutil
         from pathlib import Path
-        from credential_manager import CREDENTIALS_FILE
+        from auth.credentials import CREDENTIALS_FILE
 
         if os.path.exists(CREDENTIALS_FILE):
             os.remove(CREDENTIALS_FILE)
 
         try:
-            from credential_manager import init_credentials, get_credential_status, _credentials_cache, _initialized
+            from auth.credentials import init_credentials, get_credential_status, _credentials_cache, _initialized
             _credentials_cache.clear()
             _initialized = False
             init_credentials()
@@ -216,7 +216,7 @@ class TestGatewayStartup(unittest.TestCase):
             self.fail(f"Failed to import without credentials: {e}")
 
     def test_constants_load(self):
-        from constants import VERSION, OKX_BASE, DEFAULT_INSTRUMENTS
+        from core.constants import VERSION, OKX_BASE, DEFAULT_INSTRUMENTS
         self.assertEqual(VERSION, "v2.00")
         self.assertEqual(OKX_BASE, "https://www.okx.com")
         self.assertGreater(len(DEFAULT_INSTRUMENTS), 0)
@@ -228,7 +228,7 @@ class TestGatewayStartup(unittest.TestCase):
         temp_dir = tempfile.mkdtemp()
         try:
             with patch('state.DATA_DIR', temp_dir):
-                from state import state, state_lock, save_state, load_state
+                from core.state import state, state_lock, save_state, load_state
                 self.assertIsNotNone(state)
                 self.assertIn("trading_pairs", state)
         finally:
@@ -239,7 +239,7 @@ class TestAPIEndpoints(unittest.TestCase):
     """Test API endpoint logic without running server."""
 
     def test_credential_validation(self):
-        from credential_manager import CREDENTIAL_TYPES
+        from auth.credentials import CREDENTIAL_TYPES
         self.assertIn("smtp_sender", CREDENTIAL_TYPES)
         self.assertIn("db_password", CREDENTIAL_TYPES)
         self.assertIn("okx_api_key", CREDENTIAL_TYPES)
@@ -263,7 +263,7 @@ def run_integration_test():
     """Run integration test with mock server."""
     logger.info("Starting integration test...")
 
-    from credential_manager import init_credentials, get_credential_status
+    from auth.credentials import init_credentials, get_credential_status
     init_credentials()
     status = get_credential_status()
     logger.info("Credential status: %s", status)
@@ -277,7 +277,7 @@ def run_integration_test():
         for i in range(300)
     ]
 
-    from indicators import calc_all_indicators, get_latest_indicators
+    from indicators.calculator import calc_all_indicators, get_latest_indicators
     indicators = calc_all_indicators(test_candles)
     latest = get_latest_indicators(indicators)
     logger.info("Indicators calculated: %s", list(indicators.keys()))

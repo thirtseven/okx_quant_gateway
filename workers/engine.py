@@ -15,12 +15,12 @@ logger = logging.getLogger("engine")
 from flask import Flask, jsonify, request
 app = Flask(__name__)
 
-from lgbm_bridge import _load_model, compute_signal as lgbm_raw, get_params, is_loaded
-from okx_client import fetch_pair_candles, fetch_all_usdt_swap_instruments
-from indicators import calc_all_indicators, get_latest_indicators, compute_signal
-from constants import build_genome, CANDLE_BAR, CANDLE_LIMIT, DEFAULT_INSTRUMENTS
-from storage import load_candles, pair_csv
-from state import state as gateway_state, state_lock
+from indicators.lgbm import _load_model, compute_signal as lgbm_raw, get_params, is_loaded
+from exchange.client import fetch_pair_candles, fetch_all_usdt_swap_instruments
+from indicators.calculator import calc_all_indicators, get_latest_indicators, compute_signal
+from core.constants import build_genome, CANDLE_BAR, CANDLE_LIMIT, DEFAULT_INSTRUMENTS
+from core.storage import load_candles, pair_csv
+from core.state import state as gateway_state, state_lock
 
 ENGINE_PORT = int(os.environ.get("ENGINE_PORT", "5001"))
 UPDATE_INTERVAL = 7200  # 2h

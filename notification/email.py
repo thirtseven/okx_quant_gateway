@@ -17,7 +17,7 @@ _SMTP_LAST_ERROR = None
 
 
 def _get_smtp_config_hash():
-    from credential_manager import get_smtp_config
+    from auth.credentials import get_smtp_config
     cfg = get_smtp_config()
     if not cfg["enabled"]:
         return None
@@ -25,7 +25,7 @@ def _get_smtp_config_hash():
 
 
 def _create_smtp():
-    from credential_manager import get_smtp_config
+    from auth.credentials import get_smtp_config
     cfg = get_smtp_config()
     if not cfg["enabled"]:
         return None, "SMTP not configured"
@@ -72,7 +72,7 @@ def _get_or_create_smtp():
 
 
 def _is_configured():
-    from credential_manager import get_smtp_config
+    from auth.credentials import get_smtp_config
     return get_smtp_config()["enabled"]
 
 
@@ -87,7 +87,7 @@ def send_trade_notification(to_email, subject, body_text):
         logger.warning("[EMAIL] No SMTP connection: %s", _SMTP_LAST_ERROR)
         _record_error(f"SMTP不可用: {_SMTP_LAST_ERROR}")
         return False
-    from credential_manager import get_smtp_config
+    from auth.credentials import get_smtp_config
     cfg = get_smtp_config()
     try:
         smtp_conn.send(
@@ -142,7 +142,7 @@ def notify_signal(state_ref, pair, direction, price, sig_type, pnl=None, indicat
     if sig_type == "HOLD":
         return
 
-    from credential_manager import get_smtp_config
+    from auth.credentials import get_smtp_config
     cfg = get_smtp_config()
     sender = cfg["sender"]
     safe_users = state_ref.get("safe_users", [])

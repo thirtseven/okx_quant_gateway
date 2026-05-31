@@ -12,8 +12,8 @@ from flask import Flask, render_template_string, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from constants import OKX_BASE, DEFAULT_INSTRUMENTS, VERSION, PROXY, PROXIES, build_genome
-from credential_manager import _simple_encrypt, _simple_decrypt
+from core.constants import OKX_BASE, DEFAULT_INSTRUMENTS, VERSION, PROXY, PROXIES, build_genome
+from auth.credentials import _simple_encrypt, _simple_decrypt
 
 logger = logging.getLogger(__name__)
 

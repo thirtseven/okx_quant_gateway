@@ -32,23 +32,23 @@ os.environ.setdefault("DB_NAME", "test_db")
 os.environ.setdefault("SMTP_SENDER", "test@example.com")
 os.environ.setdefault("SMTP_AUTH_CODE", "test_auth")
 
-from indicators import (
+from indicators.calculator import (
     calc_ema, calc_rsi, calc_macd, calc_bb, calc_stoch, calc_atr,
     calc_all_indicators, get_latest_indicators, compute_signal,
     safe_val, _detect_trend,
 )
-from okx_client import (
+from exchange.client import (
     _validate_candle, _prec, _merge_candles_on_timeline,
     calculate_for_pair, fetch_pair_candles, fetch_okx_ticker,
 )
-from storage import pair_csv, load_candles, append_candles
-from constants import build_genome, VERSION, CANDLE_LIMIT, CANDLE_BAR, DEFAULT_INSTRUMENTS
-from credential_manager import (
+from core.storage import pair_csv, load_candles, append_candles
+from core.constants import build_genome, VERSION, CANDLE_LIMIT, CANDLE_BAR, DEFAULT_INSTRUMENTS
+from auth.credentials import (
     _simple_encrypt, _simple_decrypt, _get_encryption_key_bytes,
     CREDENTIAL_TYPES, get_credential, set_credential, init_credentials,
     remove_credential, get_credential_status,
 )
-from state import state, state_lock, mark_dirty, is_dirty, save_state, load_state
+from core.state import state, state_lock, mark_dirty, is_dirty, save_state, load_state
 from strategy_manager import (
     init_strategy_params, get_strategy_params, get_regime_mode,
     get_all_regimes, get_general_params, set_param, get_param, reset_params,

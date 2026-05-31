@@ -47,9 +47,9 @@ def _run_async_loop():
 
 
 def start_data_updater(state_ref: Dict[str, Any], state_lock: threading.Lock, genome: Dict, save_state_func):
-    import okx_client
-    from constants import build_genome
-    from state import mark_dirty
+    import exchange.client as okx_client
+    from core.constants import build_genome
+    from core.state import mark_dirty
 
     def data_updater():
         loop = _run_async_loop()
@@ -84,7 +84,7 @@ def start_data_updater(state_ref: Dict[str, Any], state_lock: threading.Lock, ge
 
 
 def start_price_updater(state_ref: Dict[str, Any], state_lock: threading.Lock):
-    import okx_client
+    import exchange.client as okx_client
 
     def price_updater():
         loop = _run_async_loop()
@@ -114,7 +114,7 @@ def start_price_updater(state_ref: Dict[str, Any], state_lock: threading.Lock):
 
 
 def start_state_persistor(state_ref: Dict[str, Any], state_lock: threading.Lock, save_state_func):
-    from state import is_dirty
+    from core.state import is_dirty
 
     def state_persistor():
         while True:
@@ -133,14 +133,14 @@ def start_state_persistor(state_ref: Dict[str, Any], state_lock: threading.Lock,
 
 
 def _v(val, default=None):
-    from indicators import safe_val
+    from indicators.calculator import safe_val
     return safe_val(val, default)
 
 
 def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_state_func):
-    import indicators
-    from constants import build_genome
-    from state import mark_dirty
+    import indicators.calculator as indicators
+    from core.constants import build_genome
+    from core.state import mark_dirty
     CIRCUIT_BREAK_LOSSES = 5
     CIRCUIT_BREAK_DURATION = 900
     MAX_OPEN_PER_TICK = 999999  # No per-tick limit — controlled via pair cooldown
@@ -309,7 +309,7 @@ def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_
                                 direction = sig
                                 entry_price = close
                                 if "regimes" in _current_genome:
-                                    from indicators import _detect_trend
+                                    from indicators.calculator import _detect_trend
                                     regime_mode = _current_genome.get("regime_mode", "auto")
                                     if regime_mode in ("bull", "bear", "range"):
                                         regime = regime_mode
