@@ -437,31 +437,42 @@ async def fetch_and_calculate_all(state_ref, state_lock, genome):
 
 async def fetch_all_prices(state_ref, state_lock):
     with state_lock:
-        pairs_snapshot = list(state_ref["trading_pairs"])
+        pairs_snapshot = set(state_ref["trading_pairs"])
     
     prices = {}
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
-    
-    async def fetch_with_limit(client, pair):
-        async with semaphore:
-            return pair, await fetch_okx_ticker(client, pair)
     
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=30.0, proxy=PROXY) as client:
-                tasks = [fetch_with_limit(client, pair) for pair in pairs_snapshot]
-                results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=60.0)
-                for result in results:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        pair, ticker = result
-                        if isinstance(ticker, dict) and ticker:
-                            prices[pair] = ticker
+                url = f"{OKX_BASE}/api/v5/market/tickers?instType=SWAP"
+                r = await client.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15.0)
+                d = r.json()
+                
+                if d.get("code") == "0" and d.get("data"):
+                    for ticker in d["data"]:
+                        inst_id = ticker.get("instId", "")
+                        if inst_id in pairs_snapshot:
+                            last_str = ticker.get("last", "0")
+                            try:
+                                last_val = float(last_str) if last_str not in ("--", "") else 0
+                            except (ValueError, TypeError):
+                                last_val = 0
+                            
+                            if last_val > 0:
+                                prices[inst_id] = {
+                                    "inst_id": inst_id,
+                                    "last": last_str,
+                                    "open24h": ticker.get("open24h", "0"),
+                                    "vol24h": ticker.get("vol24h", "0"),
+                                    "ts": ticker.get("ts", ""),
+                                }
+                
                 if prices:
                     break
         except Exception as e:
             logging.warning(f"[PRICE_UPDATE] attempt={attempt} failed: {e}")
-            if attempt == 2:
-                continue
+            if attempt < 2:
+                await asyncio.sleep(1.0 * (attempt + 1))
     
     missing = len(pairs_snapshot) - len(prices)
     if missing:
