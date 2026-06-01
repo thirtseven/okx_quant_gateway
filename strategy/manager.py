@@ -1,5 +1,8 @@
-"""Strategy parameter management — v274 LightGBM.
-Loads from data/v274_best_params.json."""
+"""Strategy parameter management — dynamic model-based.
+
+Loads strategy params from active model's params.json.
+Falls back to defaults if model not available.
+"""
 import json
 import logging
 import os
@@ -7,11 +10,19 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-STRATEGY_FILE = os.path.join(DATA_DIR, "v274_best_params.json")
-
 _strategy_data: Optional[Dict[str, Any]] = None
 _initialized = False
+
+
+def _get_active_model_params() -> Optional[Dict[str, Any]]:
+    try:
+        from model.manager import get_active_model
+        container = get_active_model()
+        if container and container.params:
+            return container.params
+    except Exception as e:
+        logger.debug("Model manager not available: %s", e)
+    return None
 
 
 def init_strategy_params():
@@ -19,23 +30,17 @@ def init_strategy_params():
     if _initialized:
         return
 
-    if not os.path.exists(STRATEGY_FILE):
-        logger.error("Strategy file not found: %s", STRATEGY_FILE)
-        _strategy_data = {}
+    model_params = _get_active_model_params()
+    if model_params:
+        _strategy_data = model_params
         _initialized = True
+        logger.info("Strategy loaded from active model: %s",
+                    _strategy_data.get("version", "unknown"))
         return
 
-    try:
-        with open(STRATEGY_FILE, "r") as f:
-            _strategy_data = json.load(f)
-        _initialized = True
-        logger.info("v274 loaded — model=%s position=%s",
-                    _strategy_data.get("model", {}).get("type", "LightGBM"),
-                    _strategy_data.get("trading", {}).get("position", "long_only"))
-    except Exception as e:
-        logger.error("Failed to load strategy: %s", e)
-        _strategy_data = {}
-        _initialized = True
+    logger.warning("No active model found, using defaults")
+    _strategy_data = {}
+    _initialized = True
 
 
 def _get_genome() -> Dict[str, Any]:
@@ -114,7 +119,7 @@ def reset_params() -> bool:
     global _initialized
     _initialized = False
     init_strategy_params()
-    logger.info("Reset to file defaults")
+    logger.info("Reset to model defaults")
     return True
 
 
@@ -130,8 +135,15 @@ def set_params(params: Dict[str, Any]) -> bool:
 def _save_strategy():
     if _strategy_data:
         try:
-            with open(STRATEGY_FILE, "w") as f:
-                json.dump(_strategy_data, f, indent=2)
+            from model.manager import get_active_model
+            container = get_active_model()
+            if container and container.path:
+                params_file = os.path.join(container.path, "params.json")
+                with open(params_file, "w") as f:
+                    json.dump(_strategy_data, f, indent=2)
+                logger.info("Saved strategy to model params: %s", params_file)
+            else:
+                logger.warning("No active model path, strategy not persisted")
         except Exception as e:
             logger.warning("Save failed: %s", e)
 
@@ -174,7 +186,6 @@ def get_all_regimes() -> Dict[str, Any]:
     file_regimes = genome.get("regimes", {})
     if not file_regimes:
         return defaults
-    # Merge: file overrides specific keys, defaults fill missing
     merged = {}
     for regime in ("bull", "bear", "range"):
         base = dict(defaults.get(regime, {}))
@@ -200,7 +211,7 @@ def get_general_params() -> Dict[str, Any]:
 
 
 def get_params_summary() -> Dict[str, Any]:
-    summary = {"version": _strategy_data.get("version", _strategy_data.get("strategy_name", "V274")),
+    summary = {"version": _strategy_data.get("version", _strategy_data.get("strategy_name", "unknown")),
                "regime_mode": get_regime_mode()}
     regimes = get_all_regimes()
     for r in ("bull", "bear", "range"):
@@ -208,9 +219,9 @@ def get_params_summary() -> Dict[str, Any]:
         summary[r] = {"score_min": rp.get("score_min", "?"),
                       "atr_sl": rp.get("atr_sl", "?"),
                       "atr_tp": rp.get("atr_tp", "?")}
-    stats = _strategy_data.get("stats", {})
-    summary["win_rate"] = stats.get("win_rate", 0) * 100
-    summary["sharpe"] = stats.get("sharpe", 0)
+    stats = _strategy_data.get("test", {})
+    summary["win_rate"] = stats.get("wr", 0) * 100
+    summary["sharpe"] = 0
     summary["fee"] = get_general_params().get("fee", 0.0015)
     summary["position"] = get_general_params().get("position", "long_only")
     return summary

@@ -1,70 +1,46 @@
 """LightGBM Strategy Bridge - Signal computation engine.
 
-Delegates to model_manager for model lifecycle.
+Delegates to model/manager.py for model lifecycle.
 Features built via ta library indicators. This is the ONLY signal path.
 """
-import json
 import logging
-import os
 import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-
-_model = None
-_preprocessor = None
-_params = None
-_features = None
-
-MODEL_FILE = os.path.join(DATA_DIR, "v274_model.txt")
-PREPROC_FILE = os.path.join(DATA_DIR, "v274_preprocessor.joblib")
-PARAMS_FILE = os.path.join(DATA_DIR, "v274_params.json")
-
 
 def _load_model():
-    global _model, _preprocessor, _params, _features
-    if _model is not None:
+    from model.manager import get_active_model
+    container = get_active_model()
+    if container and container.loaded:
         return True
-    
-    try:
-        from model.manager import get_active_model
-        container = get_active_model()
-        if container and container.loaded:
-            _model = container.model
-            _preprocessor = container.preprocessor
-            _params = container.params
-            _features = container.features
-            return True
-    except Exception as e:
-        logger.debug("[v274] Model manager not available, falling back to direct load: %s", e)
-    
-    try:
-        import lightgbm as lgb
-        _model = lgb.Booster(model_file=MODEL_FILE)
-        _params = json.load(open(PARAMS_FILE))
-        features_raw = _params["features"]
-        if isinstance(features_raw, dict):
-            _features = features_raw["names"]
-        else:
-            _features = features_raw
-        n_feat = len(_features)
-        champion = _params.get("champion", "v315-ga")
-        logger.info("[v274] Loaded: %d features, %s", n_feat, champion)
-        return True
-    except Exception as e:
-        logger.error("[v274] Load failed: %s", e)
-        return False
+    logger.error("[LGBM] No active model loaded")
+    return False
+
+
+def _get_model():
+    from model.manager import get_active_model
+    return get_active_model()
 
 
 def is_loaded():
-    return _model is not None
+    container = _get_model()
+    return container is not None and container.loaded
 
 
 def get_params():
-    _load_model()
-    return _params
+    container = _get_model()
+    if container and container.params:
+        return container.params
+    return {}
+
+
+def get_features():
+    container = _get_model()
+    if container and container.features:
+        return container.features
+    return []
 
 
 def _build_features(df):
@@ -218,28 +194,32 @@ def compute_signal(candles):
         return "HOLD", 0.0, 0.0
     if len(candles) < 50:
         return "HOLD", 0.0, 0.0
+    
+    container = _get_model()
+    if not container:
+        return "HOLD", 0.0, 0.0
+    
     df = pd.DataFrame(candles[-300:])
     fb = _build_features(df)
     if fb is None or len(fb) == 0:
         return "HOLD", 0.0, 0.0
-    avail = [f for f in _features if f in fb.columns]
+    
+    features = get_features()
+    avail = [f for f in features if f in fb.columns]
     if len(avail) < 10:
         return "HOLD", 0.0, 0.0
+    
     X = fb[avail].values.astype(np.float32)
     for j in range(X.shape[1]):
         mask = np.isnan(X[:, j])
         if mask.any():
             X[mask, j] = np.nanmedian(X[:, j])
-    try:
-        if _preprocessor is not None:
-            scaler = _preprocessor if hasattr(_preprocessor, "transform") else _preprocessor.get("scaler", None)
-            if scaler is not None:
-                X = scaler.transform(X)
-        raw = float(_model.predict(X, num_iteration=_model.best_iteration)[-1])
-        return "HOLD", raw, 0.0
-    except Exception as e:
-        logger.error("[v274] predict error: %s", e)
+    
+    result = container.predict(X)
+    if result is None:
         return "HOLD", 0.0, 0.0
+    
+    return "HOLD", float(result), 0.0
 
 
 def compute_batch_signals(pairs_candles):
