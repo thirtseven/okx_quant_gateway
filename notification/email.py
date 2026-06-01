@@ -116,7 +116,7 @@ def _reset_connection():
 
 def _record_error(msg):
     try:
-        from state import state_lock, state as _state
+        from core.state import state_lock, state as _state
         with state_lock:
             _state["last_error"] = msg
     except Exception:

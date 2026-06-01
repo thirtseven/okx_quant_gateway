@@ -49,7 +49,7 @@ from auth.credentials import (
     remove_credential, get_credential_status,
 )
 from core.state import state, state_lock, mark_dirty, is_dirty, save_state, load_state
-from strategy_manager import (
+from strategy.manager import (
     init_strategy_params, get_strategy_params, get_regime_mode,
     get_all_regimes, get_general_params, set_param, get_param, reset_params,
 )
@@ -385,7 +385,7 @@ class TestStrategyParameters(unittest.TestCase):
 
     def test_regime_mode(self):
         old = get_regime_mode()
-        from strategy_manager import set_regime_mode
+        from strategy.manager import set_regime_mode
         set_regime_mode("bull")
         self.assertEqual(get_regime_mode(), "bull")
         set_regime_mode(old)

@@ -102,8 +102,7 @@ curl("POST", "/api/mode", {"mode": "safe"}, None)
 # ── SECTION 5: Trading Pairs ──
 print("\n── Trading Pairs ──")
 curl("POST", "/api/pairs", {"pair": "BTC-USDT-SWAP"},
-     None, expect_status=(200, 409))
-     None, expect_status=200, timeout=30)
+     None, expect_status=(200, 409), timeout=30)
 curl("DELETE", "/api/pairs/TEST-NOT-EXIST-USDT-SWAP",
      None, expect_status=(200, 404))
 

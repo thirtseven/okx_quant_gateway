@@ -96,19 +96,19 @@ class TestNetworkManager(unittest.TestCase):
     """Test network manager without root privileges."""
 
     def test_detect_parent_interface(self):
-        from network_manager import NetworkManager
+        from exchange.network import NetworkManager
         nm = NetworkManager()
         parent = nm._detect_parent_interface()
         self.assertIsNotNone(parent)
         logger.info("Detected parent interface: %s", parent)
 
     def test_interface_exists_false(self):
-        from network_manager import NetworkManager
+        from exchange.network import NetworkManager
         nm = NetworkManager()
         self.assertFalse(nm.interface_exists())
 
     def test_get_status(self):
-        from network_manager import NetworkManager
+        from exchange.network import NetworkManager
         nm = NetworkManager()
         status = nm.get_status()
         self.assertIn("interface", status)
@@ -268,7 +268,7 @@ def run_integration_test():
     status = get_credential_status()
     logger.info("Credential status: %s", status)
 
-    from network_manager import NetworkManager
+    from exchange.network import NetworkManager
     nm = NetworkManager()
     logger.info("Network status: %s", nm.get_status())
 

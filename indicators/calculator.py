@@ -316,7 +316,7 @@ def clear_indicator_cache():
 
 def get_cache_stats() -> Dict:
     try:
-        from state import state
+        from core.state import state
         cache = state.get("indicator_cache", {})
         return {
             "cached_pairs": len(cache),
