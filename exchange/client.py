@@ -509,7 +509,7 @@ def fetch_all_usdt_swap_instruments():
 def fetch_single_pair_candles(pair, retries=2):
     """Synchronous wrapper for fetch_pair_candles — for one-off route handler use."""
     import asyncio
-    from constants import PROXY
+    from core.constants import PROXY
     loop = asyncio.new_event_loop()
     try:
         async def _fetch():

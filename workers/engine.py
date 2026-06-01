@@ -56,7 +56,7 @@ def _fetch_and_compute():
         async def _fetch_one(client, pair):
             async with sem:
                 return pair, await fetch_pair_candles(client, pair, retries=2)
-        from constants import PROXY
+        from core.constants import PROXY
         async with httpx.AsyncClient(timeout=60.0, proxy=PROXY) as client:
             tasks = [_fetch_one(client, p) for p in instruments]
             return await asyncio.gather(*tasks, return_exceptions=True)

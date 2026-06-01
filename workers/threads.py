@@ -149,13 +149,13 @@ def start_strategy_tick(state_ref, state_lock, genome, notify_signal_func, save_
 
     def _get_time_based_tp_hours():
         """Time-based TP: close profitable positions after N hours."""
-        from strategy_manager import get_general_params
+        from strategy.manager import get_general_params
         max_bars = get_general_params().get("max_bars", 50)
         hours = max_bars * 15 / 60  # bars → hours
         return min(hours, 12.0)  # cap at 12 hours
 
     def _get_fee():
-        from strategy_manager import get_general_params
+        from strategy.manager import get_general_params
         return get_general_params().get("fee", 0.0015)
 
     def _get_max_positions():

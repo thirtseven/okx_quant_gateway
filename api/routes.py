@@ -497,7 +497,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
             return
         if _req.method == "OPTIONS":
             return
-        from credential_manager import get_credential
+        from auth.credentials import get_credential
         expected = get_credential("api_key")
         if not expected:
             return
@@ -652,7 +652,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         th = d.get("score_threshold")
         if th is None or not (0.1 <= th <= 1.0):
             return jsonify({"ok": False, "msg": "score_threshold must be between 0.1 and 1.0"})
-        from strategy_manager import set_param
+        from strategy.manager import set_param
         for regime in ("bull", "bear", "range"):
             set_param(f"regimes.{regime}.score_min", float(th))
         state_dirty[0] = True
@@ -872,7 +872,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/test-email", methods=["POST"])
     def api_test_email():
-        from notifications import send_trade_notification, _is_configured
+        from notification.email import send_trade_notification, _is_configured
         if not _is_configured():
             return jsonify({"ok": False, "msg": "SMTP未配置，请先在系统设置中配置发件邮箱和授权码"})
         if not local_state.get("safe_users"):
@@ -972,7 +972,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/health")
     def api_health():
-        from credential_manager import get_credential_status, get_smtp_config, get_db_config, get_okx_config
+        from auth.credentials import get_credential_status, get_smtp_config, get_db_config, get_okx_config
         creds = get_credential_status()
         return jsonify({
             "status": "ok",
@@ -985,12 +985,12 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/credentials/status")
     def api_credentials_status():
-        from credential_manager import get_credential_status
+        from auth.credentials import get_credential_status
         return jsonify(get_credential_status())
 
     @app.route("/api/credentials/values")
     def api_credentials_values():
-        from credential_manager import get_credential
+        from auth.credentials import get_credential
         return jsonify({
             "smtp_sender": get_credential("smtp_sender") or "",
             "smtp_auth_code": get_credential("smtp_auth_code") or "",
@@ -1005,7 +1005,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/credentials", methods=["POST"])
     @limiter.limit("5 per minute")
     def api_credentials_set():
-        from credential_manager import set_credential, CREDENTIAL_TYPES, apply_credentials_to_env
+        from auth.credentials import set_credential, CREDENTIAL_TYPES, apply_credentials_to_env
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "msg": "Invalid request body"}), 400
@@ -1028,7 +1028,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/credentials/<cred_type>", methods=["DELETE"])
     @limiter.limit("10 per minute")
     def api_credentials_delete(cred_type):
-        from credential_manager import remove_credential, CREDENTIAL_TYPES
+        from auth.credentials import remove_credential, CREDENTIAL_TYPES
         if cred_type not in CREDENTIAL_TYPES:
             return jsonify({"ok": False, "msg": f"Invalid credential type: {cred_type}"}), 400
 
@@ -1039,7 +1039,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/credentials/smtp", methods=["GET"])
     def api_credentials_smtp():
-        from credential_manager import get_smtp_config
+        from auth.credentials import get_smtp_config
         config = get_smtp_config()
         return jsonify({
             "configured": config["enabled"],
@@ -1048,7 +1048,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/credentials/okx", methods=["GET"])
     def api_credentials_okx():
-        from credential_manager import get_okx_config
+        from auth.credentials import get_okx_config
         config = get_okx_config()
         return jsonify({
             "configured": config["configured"],
@@ -1057,23 +1057,23 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/network/status")
     def api_network_status():
-        from network_manager import get_network_manager
+        from exchange.network import get_network_manager
         manager = get_network_manager()
         return jsonify(manager.get_status())
 
     @app.route("/api/strategy/params")
     def api_strategy_params():
-        from strategy_manager import get_strategy_params
+        from strategy.manager import get_strategy_params
         return jsonify(get_strategy_params())
 
     @app.route("/api/strategy/params/summary")
     def api_strategy_params_summary():
-        from strategy_manager import get_params_summary
+        from strategy.manager import get_params_summary
         return jsonify(get_params_summary())
 
     @app.route("/api/strategy/params/<path:param_path>", methods=["GET"])
     def api_strategy_param_get(param_path):
-        from strategy_manager import get_param
+        from strategy.manager import get_param
         value = get_param(param_path)
         if value is None:
             return jsonify({"ok": False, "msg": f"Parameter not found: {param_path}"}), 404
@@ -1082,7 +1082,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/strategy/params/<path:param_path>", methods=["PUT"])
     @limiter.limit("30 per minute")
     def api_strategy_param_set(param_path):
-        from strategy_manager import set_param
+        from strategy.manager import set_param
         data = request.get_json()
         if not data or "value" not in data:
             return jsonify({"ok": False, "msg": "Missing value in request body"}), 400
@@ -1093,7 +1093,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/strategy/params", methods=["PUT"])
     @limiter.limit("10 per minute")
     def api_strategy_params_update():
-        from strategy_manager import set_params
+        from strategy.manager import set_params
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "msg": "Invalid request body"}), 400
@@ -1104,14 +1104,14 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/strategy/params/reset", methods=["POST"])
     @limiter.limit("5 per minute")
     def api_strategy_params_reset():
-        from strategy_manager import reset_params
+        from strategy.manager import reset_params
         if reset_params():
             return jsonify({"ok": True, "msg": "Strategy parameters reset to defaults"})
         return jsonify({"ok": False, "msg": "Failed to reset parameters"}), 500
 
     @app.route("/api/strategy/regime", methods=["GET"])
     def api_regime_get():
-        from strategy_manager import get_regime_mode, get_all_regimes, get_general_params
+        from strategy.manager import get_regime_mode, get_all_regimes, get_general_params
         return jsonify({
             "mode": get_regime_mode(),
             "regimes": get_all_regimes(),
@@ -1121,7 +1121,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/strategy/regime", methods=["PUT"])
     @limiter.limit("30 per minute")
     def api_regime_set():
-        from strategy_manager import set_regime_mode
+        from strategy.manager import set_regime_mode
         data = request.get_json()
         if not data or "mode" not in data:
             return jsonify({"ok": False, "msg": "Missing mode"}), 400
@@ -1131,7 +1131,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/strategy/regime/<regime>", methods=["GET"])
     def api_regime_params_get(regime):
-        from strategy_manager import get_regime_params
+        from strategy.manager import get_regime_params
         if regime not in ("bull", "bear", "range"):
             return jsonify({"ok": False, "msg": "Invalid regime"}), 400
         return jsonify({"ok": True, "regime": regime, "params": get_regime_params(regime)})
@@ -1139,7 +1139,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/strategy/regime/<regime>", methods=["PUT"])
     @limiter.limit("30 per minute")
     def api_regime_params_set(regime):
-        from strategy_manager import set_regime_params
+        from strategy.manager import set_regime_params
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "msg": "Invalid request body"}), 400
@@ -1155,8 +1155,8 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/config/export", methods=["GET"])
     def api_config_export():
-        from strategy_manager import get_strategy_params
-        from credential_manager import get_credential_status
+        from strategy.manager import get_strategy_params
+        from auth.credentials import get_credential_status
         return jsonify({
             "strategy": get_strategy_params(),
             "credentials": get_credential_status(),
@@ -1166,7 +1166,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/config/import", methods=["POST"])
     @limiter.limit("5 per minute")
     def api_config_import():
-        from strategy_manager import set_params
+        from strategy.manager import set_params
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "msg": "Invalid request body"}), 400
@@ -1189,12 +1189,12 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/models")
     def api_models_list():
-        from model_manager import list_models
+        from model.manager import list_models
         return jsonify({"models": list_models()})
 
     @app.route("/api/models/active")
     def api_models_active():
-        from model_manager import get_active_model
+        from model.manager import get_active_model
         model = get_active_model()
         if model:
             return jsonify({"ok": True, "model": model.get_info()})
@@ -1202,7 +1202,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/models/active", methods=["PUT"])
     def api_models_set_active():
-        from model_manager import set_active_model
+        from model.manager import set_active_model
         data = request.get_json()
         if not data or "name" not in data:
             return jsonify({"ok": False, "msg": "Missing model name"}), 400
@@ -1216,7 +1216,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/models/reload", methods=["POST"])
     @limiter.limit("10 per minute")
     def api_models_reload():
-        from model_manager import reload_model
+        from model.manager import reload_model
         data = request.get_json() or {}
         name = data.get("name")
         if reload_model(name):
