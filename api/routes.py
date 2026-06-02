@@ -585,7 +585,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/signals")
     def api_signals():
-        from lgbm_bridge import get_params, is_loaded as lgbm_loaded
+        from indicators.lgbm import get_params, is_loaded as lgbm_loaded
         g = build_genome()
         cached = dict(local_state.get("indicator_cache", {}))
         signals = {}
@@ -610,7 +610,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
 
     @app.route("/api/strategy/model")
     def api_strategy_model():
-        from lgbm_bridge import get_params, is_loaded, _load_model
+        from indicators.lgbm import get_params, is_loaded, _load_model
         _load_model()
         if not is_loaded():
             return jsonify({"loaded": False})
