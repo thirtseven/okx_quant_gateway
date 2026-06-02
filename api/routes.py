@@ -459,7 +459,7 @@ async function saveRegimeMode() {
 
 
 def fetch_all_usdt_swap_instruments():
-    from okx_client import fetch_all_usdt_swap_instruments as _fetch
+    from exchange.client import fetch_all_usdt_swap_instruments as _fetch
     return _fetch()
 
 
@@ -764,7 +764,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/pairs", methods=["POST"])
     @limiter.limit("10 per minute")
     def api_pairs_add():
-        from okx_client import fetch_single_pair_candles
+        from exchange.client import fetch_single_pair_candles
         data = request.get_json()
         if not data:
             return jsonify({"ok": False, "msg": "Invalid request body"}), 400
@@ -793,7 +793,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/api/pairs/add-all", methods=["POST"])
     @limiter.limit("1 per 5 minutes")
     def api_pairs_add_all():
-        from okx_client import fetch_single_pair_candles
+        from exchange.client import fetch_single_pair_candles
         from concurrent.futures import ThreadPoolExecutor, as_completed
         try:
             all_instruments = fetch_all_usdt_swap_instruments()
