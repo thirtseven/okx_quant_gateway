@@ -1,7 +1,7 @@
-"""Model Manager - Containerized LightGBM model lifecycle management.
+"""Model Manager - Dynamic model lifecycle management.
 
-Scans models/ directory for model containers, supports hot-swap by replacing files.
-Each model folder contains: model.txt, params.json, preprocessor.joblib (optional)
+Auto-detects model files in folders. Supports hot-swap by replacing files.
+No hardcoded filenames - scans for common model formats.
 """
 import json
 import logging
@@ -11,9 +11,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-import lightgbm as lgb
 import numpy as np
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -21,14 +19,36 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(PROJECT_DIR, "models")
 ACTIVE_MODEL_FILE = os.path.join(PROJECT_DIR, "data", "active_model.json")
 
+MODEL_EXTENSIONS = {".txt", ".model", ".bin", ".pkl", ".joblib", ".onnx", ".pmml"}
+PARAMS_EXTENSIONS = {".json", ".yaml", ".yml"}
+PREPROCESSOR_EXTENSIONS = {".joblib", ".pkl", ".pickle", ".pt", ".pth"}
+
+
+def _find_files_by_extensions(directory: str, extensions: set) -> List[str]:
+    found = []
+    if not os.path.isdir(directory):
+        return found
+    for f in os.listdir(directory):
+        if Path(f).suffix.lower() in extensions:
+            found.append(os.path.join(directory, f))
+    return found
+
+
+def _is_lightgbm_file(filepath: str) -> bool:
+    try:
+        with open(filepath, 'r') as f:
+            first_line = f.readline().strip()
+            return first_line.startswith("tree") or "version" in first_line.lower()
+    except (UnicodeDecodeError, PermissionError):
+        return False
+
 
 class ModelContainer:
-    """Single model container with lazy loading and file change detection."""
-    
     def __init__(self, name: str, path: str):
         self.name = name
         self.path = path
-        self.model: Optional[lgb.Booster] = None
+        self.model = None
+        self.model_type = None
         self.preprocessor = None
         self.params: Optional[Dict] = None
         self.features: Optional[List[str]] = None
@@ -37,25 +57,41 @@ class ModelContainer:
         self._file_mtimes: Dict[str, float] = {}
         self._lock = threading.Lock()
     
-    def _get_model_file(self) -> str:
-        return os.path.join(self.path, "model.txt")
+    def _detect_model_file(self) -> Optional[str]:
+        candidates = _find_files_by_extensions(self.path, MODEL_EXTENSIONS)
+        for f in candidates:
+            if _is_lightgbm_file(f):
+                return f
+        for f in candidates:
+            fname = Path(f).stem.lower()
+            if "model" in fname or "lgb" in fname or "lightgbm" in fname:
+                return f
+        return candidates[0] if candidates else None
     
-    def _get_params_file(self) -> str:
-        return os.path.join(self.path, "params.json")
+    def _detect_params_file(self) -> Optional[str]:
+        candidates = _find_files_by_extensions(self.path, PARAMS_EXTENSIONS)
+        for f in candidates:
+            fname = Path(f).stem.lower()
+            if "param" in fname or "config" in fname or "meta" in fname:
+                return f
+        return candidates[0] if candidates else None
     
-    def _get_preprocessor_file(self) -> str:
-        return os.path.join(self.path, "preprocessor.joblib")
+    def _detect_preprocessor_file(self) -> Optional[str]:
+        candidates = _find_files_by_extensions(self.path, PREPROCESSOR_EXTENSIONS)
+        for f in candidates:
+            fname = Path(f).stem.lower()
+            if "preproc" in fname or "scaler" in fname or "transform" in fname:
+                return f
+        return candidates[0] if candidates else None
     
     def _check_files_changed(self) -> bool:
-        """Check if any model files have been modified."""
-        files = {
-            "model": self._get_model_file(),
-            "params": self._get_params_file(),
-            "preprocessor": self._get_preprocessor_file(),
-        }
+        model_file = self._detect_model_file()
+        params_file = self._detect_params_file()
+        preprocessor_file = self._detect_preprocessor_file()
+        
         changed = False
-        for key, filepath in files.items():
-            if os.path.exists(filepath):
+        for key, filepath in [("model", model_file), ("params", params_file), ("preproc", preprocessor_file)]:
+            if filepath and os.path.exists(filepath):
                 mtime = os.path.getmtime(filepath)
                 if key not in self._file_mtimes or self._file_mtimes[key] != mtime:
                     self._file_mtimes[key] = mtime
@@ -63,31 +99,26 @@ class ModelContainer:
         return changed
     
     def load(self, force: bool = False) -> bool:
-        """Load or reload model if files changed."""
         with self._lock:
             if self.loaded and not force and not self._check_files_changed():
                 return True
             
             try:
-                model_file = self._get_model_file()
-                params_file = self._get_params_file()
+                model_file = self._detect_model_file()
+                params_file = self._detect_params_file()
                 
-                if not os.path.exists(model_file):
-                    self.error = f"Model file not found: {model_file}"
-                    logger.error("[ModelManager] %s", self.error)
+                if not model_file:
+                    self.error = "No model file found"
                     return False
                 
-                if not os.path.exists(params_file):
-                    self.error = f"Params file not found: {params_file}"
-                    logger.error("[ModelManager] %s", self.error)
+                if not params_file:
+                    self.error = "No params file found"
                     return False
                 
-                if not self._is_valid_model_name(self.name):
-                    self.error = f"Invalid model name: {self.name}"
-                    logger.error("[ModelManager] %s", self.error)
+                self.model = self._load_model(model_file)
+                if self.model is None:
+                    self.error = f"Failed to load model: {model_file}"
                     return False
-                
-                self.model = lgb.Booster(model_file=model_file)
                 
                 with open(params_file, 'r') as f:
                     self.params = json.load(f)
@@ -98,40 +129,74 @@ class ModelContainer:
                 else:
                     self.features = features_raw if isinstance(features_raw, list) else []
                 
-                preprocessor_file = self._get_preprocessor_file()
-                if os.path.exists(preprocessor_file):
-                    try:
-                        import joblib
-                        logger.warning("[ModelManager] Loading preprocessor with joblib - ensure model files are trusted")
-                        self.preprocessor = joblib.load(preprocessor_file)
-                    except Exception as e:
-                        logger.warning("[ModelManager] Failed to load preprocessor: %s", e)
-                        self.preprocessor = None
+                preprocessor_file = self._detect_preprocessor_file()
+                if preprocessor_file:
+                    self.preprocessor = self._load_preprocessor(preprocessor_file)
                 
                 self.loaded = True
                 self.error = None
-                logger.info("[ModelManager] Loaded model '%s' with %d features", 
-                           self.name, len(self.features))
+                logger.info("[ModelManager] Loaded '%s' (%s, %d features)", 
+                           self.name, self.model_type or "unknown", len(self.features))
                 return True
                 
             except Exception as e:
                 self.error = str(e)
                 self.loaded = False
-                logger.error("[ModelManager] Failed to load model '%s': %s", self.name, e)
+                logger.error("[ModelManager] Failed to load '%s': %s", self.name, e)
                 return False
     
-    def _is_valid_model_name(self, name: str) -> bool:
-        """Validate model name to prevent path traversal."""
-        if not name or not isinstance(name, str):
-            return False
-        if '..' in name or '/' in name or '\\' in name:
-            return False
-        if len(name) > 64:
-            return False
-        return name.isalnum() or '_' in name or '-' in name
+    def _load_model(self, filepath: str):
+        ext = Path(filepath).suffix.lower()
+        
+        if ext in (".txt", ".model", ".bin"):
+            try:
+                import lightgbm as lgb
+                self.model_type = "lightgbm"
+                return lgb.Booster(model_file=filepath)
+            except Exception as e:
+                logger.debug("[ModelManager] Not LightGBM: %s", e)
+        
+        if ext == ".onnx":
+            try:
+                import onnxruntime as ort
+                self.model_type = "onnx"
+                return ort.InferenceSession(filepath)
+            except Exception as e:
+                logger.debug("[ModelManager] Not ONNX: %s", e)
+        
+        if ext in (".pkl", ".joblib", ".pickle"):
+            try:
+                import joblib
+                self.model_type = "sklearn"
+                return joblib.load(filepath)
+            except Exception as e:
+                logger.debug("[ModelManager] Not sklearn: %s", e)
+        
+        try:
+            import lightgbm as lgb
+            self.model_type = "lightgbm"
+            return lgb.Booster(model_file=filepath)
+        except Exception:
+            pass
+        
+        try:
+            import joblib
+            self.model_type = "sklearn"
+            return joblib.load(filepath)
+        except Exception:
+            pass
+        
+        return None
+    
+    def _load_preprocessor(self, filepath: str):
+        try:
+            import joblib
+            return joblib.load(filepath)
+        except Exception as e:
+            logger.warning("[ModelManager] Failed to load preprocessor: %s", e)
+            return None
     
     def predict(self, X: np.ndarray) -> Optional[float]:
-        """Run prediction on preprocessed features."""
         if not self.loaded or self.model is None:
             if not self.load():
                 return None
@@ -143,20 +208,28 @@ class ModelContainer:
                     if scaler is not None:
                         X = scaler.transform(X)
                 
-                raw = float(self.model.predict(X, num_iteration=self.model.best_iteration)[-1])
-                return raw
+                if self.model_type == "lightgbm":
+                    return float(self.model.predict(X, num_iteration=self.model.best_iteration)[-1])
+                elif self.model_type == "onnx":
+                    input_name = self.model.get_inputs()[0].name
+                    result = self.model.run(None, {input_name: X.astype(np.float32)})
+                    return float(result[0][-1])
+                elif self.model_type == "sklearn":
+                    return float(self.model.predict(X)[-1])
+                else:
+                    return float(self.model.predict(X)[-1])
             except Exception as e:
-                logger.error("[ModelManager] Prediction error for '%s': %s", self.name, e)
+                logger.error("[ModelManager] Predict error for '%s': %s", self.name, e)
                 return None
     
     def get_info(self) -> Dict[str, Any]:
-        """Get model metadata."""
         self.load()
         return {
             "name": self.name,
             "path": self.path,
             "loaded": self.loaded,
             "error": self.error,
+            "model_type": self.model_type,
             "version": self.params.get("version", "unknown") if self.params else "unknown",
             "n_features": len(self.features) if self.features else 0,
             "features": self.features or [],
@@ -166,8 +239,6 @@ class ModelContainer:
 
 
 class ModelManager:
-    """Manages multiple model containers with hot-swap support."""
-    
     def __init__(self, models_dir: str = MODELS_DIR):
         self.models_dir = models_dir
         self._containers: Dict[str, ModelContainer] = {}
@@ -181,7 +252,6 @@ class ModelManager:
         self.scan_models()
     
     def _load_active_model_config(self):
-        """Load which model is currently active."""
         try:
             if os.path.exists(ACTIVE_MODEL_FILE):
                 with open(ACTIVE_MODEL_FILE, 'r') as f:
@@ -191,16 +261,14 @@ class ModelManager:
             pass
     
     def _save_active_model_config(self):
-        """Persist active model selection."""
         try:
             os.makedirs(os.path.dirname(ACTIVE_MODEL_FILE), exist_ok=True)
             with open(ACTIVE_MODEL_FILE, 'w') as f:
                 json.dump({"active_model": self._active_name}, f)
         except Exception as e:
-            logger.error("[ModelManager] Failed to save active model config: %s", e)
+            logger.error("[ModelManager] Failed to save config: %s", e)
     
     def scan_models(self) -> List[str]:
-        """Scan models directory for available model containers."""
         found = []
         if not os.path.isdir(self.models_dir):
             return found
@@ -208,9 +276,10 @@ class ModelManager:
         for entry in os.listdir(self.models_dir):
             entry_path = os.path.join(self.models_dir, entry)
             if os.path.isdir(entry_path):
-                model_file = os.path.join(entry_path, "model.txt")
-                params_file = os.path.join(entry_path, "params.json")
-                if os.path.exists(model_file) and os.path.exists(params_file):
+                has_model = len(_find_files_by_extensions(entry_path, MODEL_EXTENSIONS)) > 0
+                has_params = len(_find_files_by_extensions(entry_path, PARAMS_EXTENSIONS)) > 0
+                
+                if has_model and has_params:
                     if entry not in self._containers:
                         self._containers[entry] = ModelContainer(entry, entry_path)
                     found.append(entry)
@@ -222,7 +291,6 @@ class ModelManager:
         return found
     
     def get_active_model(self) -> Optional[ModelContainer]:
-        """Get the currently active model container."""
         if self._active_name and self._active_name in self._containers:
             container = self._containers[self._active_name]
             container.load()
@@ -237,25 +305,22 @@ class ModelManager:
         return None
     
     def set_active_model(self, name: str) -> bool:
-        """Switch active model by name."""
         self.scan_models()
         if name in self._containers:
             with self._lock:
                 self._active_name = name
                 self._save_active_model_config()
-            logger.info("[ModelManager] Switched active model to '%s'", name)
+            logger.info("[ModelManager] Switched to '%s'", name)
             return True
         return False
     
     def reload_model(self, name: Optional[str] = None) -> bool:
-        """Force reload a model (or active model if name is None)."""
         target = name or self._active_name
         if target and target in self._containers:
             return self._containers[target].load(force=True)
         return False
     
     def list_models(self) -> List[Dict[str, Any]]:
-        """List all available models with their info."""
         self.scan_models()
         result = []
         for name, container in sorted(self._containers.items()):
@@ -265,7 +330,6 @@ class ModelManager:
         return result
     
     def delete_model(self, name: str) -> bool:
-        """Delete a model container (cannot delete active model)."""
         if name == self._active_name:
             logger.error("[ModelManager] Cannot delete active model")
             return False
@@ -278,21 +342,19 @@ class ModelManager:
             import shutil
             shutil.rmtree(container.path)
             del self._containers[name]
-            logger.info("[ModelManager] Deleted model '%s'", name)
+            logger.info("[ModelManager] Deleted '%s'", name)
             return True
         except Exception as e:
-            logger.error("[ModelManager] Failed to delete model '%s': %s", name, e)
+            logger.error("[ModelManager] Failed to delete '%s': %s", name, e)
             return False
     
     def get_model_path(self, name: Optional[str] = None) -> Optional[str]:
-        """Get the directory path for a model."""
         target = name or self._active_name
         if target and target in self._containers:
             return self._containers[target].path
         return None
     
     def start_watcher(self, interval: int = 30):
-        """Start background thread to watch for model file changes."""
         if self._watch_thread and self._watch_thread.is_alive():
             return
         
@@ -310,10 +372,9 @@ class ModelManager:
         
         self._watch_thread = threading.Thread(target=_watch_loop, daemon=True)
         self._watch_thread.start()
-        logger.info("[ModelManager] Started model watcher (interval=%ds)", interval)
+        logger.info("[ModelManager] Watcher started (interval=%ds)", interval)
     
     def stop_watcher(self):
-        """Stop the background watcher thread."""
         self._running = False
 
 
@@ -321,28 +382,23 @@ _manager: Optional[ModelManager] = None
 
 
 def get_manager() -> ModelManager:
-    """Get or create the singleton ModelManager instance."""
     global _manager
     if _manager is None:
         _manager = ModelManager()
     return _manager
 
 
-def get_active_model() -> Optional[ModelContainer]:
-    """Get the active model container."""
+def get_active_model():
     return get_manager().get_active_model()
 
 
 def list_models() -> List[Dict[str, Any]]:
-    """List all available models."""
     return get_manager().list_models()
 
 
 def set_active_model(name: str) -> bool:
-    """Switch active model."""
     return get_manager().set_active_model(name)
 
 
 def reload_model(name: Optional[str] = None) -> bool:
-    """Reload a model."""
     return get_manager().reload_model(name)
