@@ -1,10 +1,11 @@
-# OKX 量化网关 API 文档
+# OKX 量化网关 API 文档 v1.0
+
+> **字段名称已锁定，不得修改。**
 
 ## 基础信息
 
-- **Base URL**: `http://172.26.99.43:5000` 或 `http://okx.local:8080`
+- **Base URL**: `http://172.26.99.43:5000`
 - **Content-Type**: `application/json`
-- **认证**: 无需认证（本地网关）
 
 ---
 
