@@ -617,34 +617,46 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         p = get_params()
         features = p.get("features", {})
         if isinstance(features, dict):
-            n_features = features.get("selected", 0)
+            n_features = features.get("selected", features.get("total", 0))
             feature_names = features.get("names", [])
         else:
             n_features = len(features) if isinstance(features, list) else 0
             feature_names = features if isinstance(features, list) else []
         
         test_metrics = p.get("test", {})
+        model_params = p.get("model", {})
+        trading_params = p.get("trading", {})
         
         return jsonify({
             "loaded": True,
-            "version": p.get("version", "v315"),
-            "champion": p.get("champion", "GA"),
+            "version": p.get("version", "unknown"),
+            "status": p.get("status", "unknown"),
             "model": {
-                "max_depth": p.get("max_depth", 2),
-                "n_estimators": p.get("n_estimators", 100),
-                "num_leaves": p.get("num_leaves", 4),
+                "max_depth": model_params.get("max_depth", 2),
+                "n_estimators": model_params.get("n_estimators", 100),
+                "num_leaves": model_params.get("num_leaves", 4),
+                "learning_rate": model_params.get("learning_rate", 0.03),
             },
-            "trade": {
-                "max_hold_bars": p.get("max_hold_bars", 12),
-                "position": "long_only",
+            "trading": {
+                "fee": trading_params.get("fee", 0.0015),
+                "max_hold": trading_params.get("max_hold", 48),
+                "position": trading_params.get("position", "long_only"),
             },
             "n_features": n_features,
             "feature_names": feature_names,
-            "test_wr": test_metrics.get("wr", 0),
-            "test_pf": test_metrics.get("pf", 0),
-            "test_corr": test_metrics.get("corr", 0),
-            "test_trades": test_metrics.get("trades", 0),
+            "test": {
+                "win_rate": test_metrics.get("wr", 0),
+                "profit_factor": test_metrics.get("pf", 0),
+                "correlation": test_metrics.get("corr", 0),
+                "trades": test_metrics.get("trades", 0),
+                "pnl": test_metrics.get("pnl", 0),
+                "profitable": test_metrics.get("profitable", False),
+            },
             "fitness": p.get("best_fitness", 0),
+            "evolution": {
+                "generations": len(p.get("evolution", {}).get("gen", [])),
+                "final_fitness": p.get("best_fitness", 0),
+            },
         })
 
     @app.route("/api/threshold", methods=["PATCH"])
