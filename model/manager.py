@@ -17,8 +17,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-ACTIVE_MODEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "active_model.json")
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODELS_DIR = os.path.join(PROJECT_DIR, "models")
+ACTIVE_MODEL_FILE = os.path.join(PROJECT_DIR, "data", "active_model.json")
 
 
 class ModelContainer:
