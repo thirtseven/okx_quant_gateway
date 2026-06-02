@@ -534,7 +534,8 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
     @app.route("/")
     def index():
         import os as _os
-        html_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "static", "index.html")
+        project_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+        html_path = _os.path.join(project_root, "static", "index.html")
         with open(html_path, "r", encoding="utf-8") as _f:
             html = _f.read()
         html = html.replace("{{ csrf_token }}", "local-gateway-no-csrf")
