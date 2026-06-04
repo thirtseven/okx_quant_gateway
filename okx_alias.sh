@@ -2,7 +2,7 @@
 # OKX 量化网关全局快捷指令
 # 用法: okx {start|stop|restart|status|log|tmux|port-forward|settings|nginx|test|backup}
 
-OKX_DIR="/mnt/c/Users/Lenovo/Desktop/okx_b_v2"
+OKX_DIR="/mnt/c/Users/Lenovo/okx_b_v2"
 
 okx() {
     case "$1" in

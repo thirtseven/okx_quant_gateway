@@ -4,7 +4,7 @@
 
 set -e
 
-PROJECT_DIR="/mnt/c/Users/Lenovo/Desktop/okx_b_v2"
+PROJECT_DIR="/mnt/c/Users/Lenovo/okx_b_v2"
 NGINX_CONF="$PROJECT_DIR/nginx.conf"
 GATEWAY_HOST="127.0.0.1"
 GATEWAY_PORT="5000"

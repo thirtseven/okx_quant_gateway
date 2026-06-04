@@ -6,7 +6,7 @@ set -e
 
 IMAGE_NAME="okx-quant-gateway"
 IMAGE_TAG="v2.00"
-BACKUP_DIR="/mnt/c/Users/Lenovo/Desktop/okx_b_v2/backups"
+BACKUP_DIR="/mnt/c/Users/Lenovo/okx_b_v2/backups"
 BACKUP_FILE="${BACKUP_DIR}/${IMAGE_NAME}_${IMAGE_TAG}_$(date +%Y%m%d_%H%M%S).tar"
 
 mkdir -p "$BACKUP_DIR"

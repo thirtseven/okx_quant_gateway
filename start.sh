@@ -2,7 +2,7 @@
 # OKX 量化网关 - 快捷启动脚本 (tmux 持久化)
 # 用法: ./start.sh [start|stop|restart|status|log|port-forward|network]
 
-PROJECT_DIR="/mnt/c/Users/Lenovo/Desktop/okx_b_v2"
+PROJECT_DIR="/mnt/c/Users/Lenovo/okx_b_v2"
 TMUX_SESSION="okx-gateway"
 ENGINE_SESSION="okx-engine"
 LOG_FILE="/tmp/okx_gateway.log"

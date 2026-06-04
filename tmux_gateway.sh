@@ -7,7 +7,7 @@
 set -e
 
 SESSION_NAME="okx-gateway"
-GATEWAY_DIR="/mnt/c/Users/Lenovo/Desktop/okx_b_v2"
+GATEWAY_DIR="/mnt/c/Users/Lenovo/okx_b_v2"
 PROXY=${HTTPS_PROXY:-http://172.26.0.1:7890}
 
 # Export proxy env vars

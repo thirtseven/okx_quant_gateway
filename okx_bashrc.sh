@@ -2,7 +2,7 @@
 # ── OKX Quantitative Gateway 快捷指令 ──
 # 纳入 ~/.bashrc: source /path/to/okx_bashrc.sh
 
-export OKX_HOME="${OKX_HOME:-/mnt/c/Users/Lenovo/Desktop/okx_b_v2}"
+export OKX_HOME="${OKX_HOME:-/mnt/c/Users/Lenovo/okx_b_v2}"
 
 # ═══════════════════════════════════════════════════════════════
 # 内部工具函数
