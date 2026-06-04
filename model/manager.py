@@ -19,7 +19,7 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(PROJECT_DIR, "models")
 ACTIVE_MODEL_FILE = os.path.join(PROJECT_DIR, "data", "active_model.json")
 
-MODEL_EXTENSIONS = {".txt", ".model", ".bin", ".pkl", ".joblib", ".onnx", ".pmml"}
+MODEL_EXTENSIONS = {".txt", ".model", ".bin", ".pkl", ".joblib", ".onnx", ".pmml", ".cbm"}
 PARAMS_EXTENSIONS = {".json", ".yaml", ".yml"}
 PREPROCESSOR_EXTENSIONS = {".joblib", ".pkl", ".pickle", ".pt", ".pth"}
 
@@ -148,6 +148,16 @@ class ModelContainer:
     def _load_model(self, filepath: str):
         ext = Path(filepath).suffix.lower()
         
+        if ext == ".cbm":
+            try:
+                import catboost as cb
+                self.model_type = "catboost"
+                model = cb.CatBoost()
+                model.load_model(filepath)
+                return model
+            except Exception as e:
+                logger.debug("[ModelManager] Not CatBoost: %s", e)
+        
         if ext in (".txt", ".model", ".bin"):
             try:
                 import lightgbm as lgb
@@ -210,6 +220,10 @@ class ModelContainer:
                 
                 if self.model_type == "lightgbm":
                     return float(self.model.predict(X, num_iteration=self.model.best_iteration)[-1])
+                elif self.model_type == "catboost":
+                    import catboost as cb
+                    pool = cb.Pool(X)
+                    return float(self.model.predict(pool)[-1])
                 elif self.model_type == "onnx":
                     input_name = self.model.get_inputs()[0].name
                     result = self.model.run(None, {input_name: X.astype(np.float32)})
