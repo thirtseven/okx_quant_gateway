@@ -625,7 +625,11 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
         
         test_metrics = p.get("test", {})
         model_params = p.get("model", {})
-        trading_params = p.get("trading", {})
+        if isinstance(model_params, str):
+            model_params = {}
+        trading_params = p.get("trading", p.get("trade_params", {}))
+        if isinstance(trading_params, str):
+            trading_params = {}
         
         return jsonify({
             "loaded": True,
