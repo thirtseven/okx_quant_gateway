@@ -896,8 +896,6 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
             return jsonify({"ok": False, "msg": "无通知邮箱，请先在模式设置中添加接收邮箱"})
         users_snapshot = [u["email"] for u in local_state["safe_users"]]
         def _send_in_background():
-            imported = __import__("notifications", fromlist=["send_trade_notification"])
-            fn = imported.send_trade_notification
             body = "\n".join([
                 "OKX量化网关测试邮件", "",
                 "时间: 测试发送", "交易对: TEST-USDT-SWAP",
@@ -905,7 +903,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
                 "", "---", "来自 OKX 量化网关",
             ])
             for email in users_snapshot:
-                fn(email, "【测试邮件】OKX量化网关", body)
+                send_trade_notification(email, "【测试邮件】OKX量化网关", body)
         threading.Thread(target=_send_in_background, daemon=True).start()
         return jsonify({"ok": True, "msg": f"正在向 {len(users_snapshot)} 个邮箱发送测试邮件..."})
 
