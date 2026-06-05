@@ -7,7 +7,8 @@ import threading
 
 import pandas as pd
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_DIR, "data")
 
 # File lock for thread-safe CSV writes
 _csv_lock = threading.Lock()
