@@ -60,6 +60,7 @@ def _build_features(df):
     result["rsi_14"] = _calc_rsi(close, 14)
     result["rsi_7"] = _calc_rsi(close, 7)
     result["atr_14"] = _calc_atr(high, low, close, 14)
+    result["atr_21"] = _calc_atr(high, low, close, 21)
     result["stoch_k"] = _calc_stoch(high, low, close, 14)
     result["stoch_d"] = pd.Series(result["stoch_k"]).rolling(3, min_periods=1).mean().values
     ema12 = pd.Series(close).ewm(span=12, adjust=False).mean().values
@@ -99,6 +100,7 @@ def _build_features(df):
     kc = KeltnerChannel(high=pd.Series(high), low=pd.Series(low), close=s_close, window=20)
     result["kc_upper"] = kc.keltner_channel_hband().values
     result["kc_middle"] = kc.keltner_channel_mband().values
+    result["kc_lower"] = kc.keltner_channel_lband().values
     hi25 = s_close.rolling(25, min_periods=1).max().values
     lo25 = s_close.rolling(25, min_periods=1).min().values
     result["close_position"] = (close - lo25) / (hi25 - lo25 + eps)
@@ -206,7 +208,7 @@ def compute_signal(candles):
     
     features = get_features()
     avail = [f for f in features if f in fb.columns]
-    if len(avail) < 10:
+    if len(avail) < 3:
         return "HOLD", 0.0, 0.0
     
     X = fb[avail].values.astype(np.float32)
