@@ -1,0 +1,57 @@
+{
+  "version": "v411-lgbm",
+  "model": "lightgbm",
+  "features": [
+    "close_vs_ema_50",
+    "kc_lower",
+    "stoch_d",
+    "atr_21",
+    "close_vs_sma_50"
+  ],
+  "n_features": 5,
+  "gpu": false,
+  "lgbm_params": {
+    "n_estimators": 200,
+    "max_depth": 4,
+    "learning_rate": 0.01,
+    "reg_alpha": 0.01,
+    "reg_lambda": 0.01,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "verbose": -1
+  },
+  "trade_params": {
+    "fee": 0.0015,
+    "min_hold": 2,
+    "max_hold": 18,
+    "entry": 0.0002,
+    "exit": -0.0002
+  },
+  "performance": {
+    "correlation": 0.014096918029311033,
+    "spearman": -0.016833897362736185,
+    "avg_pnl": -0.003774665022284724,
+    "symbols_profitable": 8,
+    "symbols_total": 69
+  },
+  "feature_importance": {
+    "close_vs_ema_50": 616.0,
+    "kc_lower": 520.0,
+    "stoch_d": 766.0,
+    "atr_21": 398.0,
+    "close_vs_sma_50": 590.0
+  },
+  "comparison": {
+    "catboost_v411": {
+      "correlation": 0.0614,
+      "pnl": -0.0028,
+      "profitable": 25
+    },
+    "lightgbm_v411": {
+      "correlation": 0.014096918029311033,
+      "pnl": -0.003774665022284724,
+      "profitable": 8
+    }
+  }
+}
