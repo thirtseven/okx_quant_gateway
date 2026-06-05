@@ -83,6 +83,9 @@ def calc_atr(highs, lows, closes, period=14):
 
 
 def calc_all_indicators(candles, pair: str = None):
+    import pandas as pd
+    from ta.volatility import KeltnerChannel
+    
     if len(candles) < 50:
         return {}
 
@@ -101,6 +104,21 @@ def calc_all_indicators(candles, pair: str = None):
     ema25 = calc_ema(closes, 25)
     ema50 = calc_ema(closes, 50)
     atr14 = calc_atr(highs, lows, closes, 14)
+    atr21 = calc_atr(highs, lows, closes, 21)
+    
+    sma50 = pd.Series(closes, dtype=float).rolling(50, min_periods=1).mean().values
+    
+    kc = KeltnerChannel(
+        high=pd.Series(highs, dtype=float),
+        low=pd.Series(lows, dtype=float),
+        close=pd.Series(closes, dtype=float),
+        window=20
+    )
+    kc_lower = kc.keltner_channel_lband().values
+    
+    eps = 1e-9
+    close_vs_ema_50 = [c / (e + eps) if e is not None else 0.0 for c, e in zip(closes, ema50)]
+    close_vs_sma_50 = [c / (s + eps) if s is not None else 0.0 for c, s in zip(closes, sma50)]
 
     return {
         "timestamps": timestamps,
@@ -116,6 +134,11 @@ def calc_all_indicators(candles, pair: str = None):
         "ema_25": [0.0 if v is None else v for v in ema25],
         "ema_50": [0.0 if v is None else v for v in ema50],
         "atr_14": [1.0 if v is None else v for v in atr14],
+        "atr_21": [1.0 if v is None else v for v in atr21],
+        "sma_50": [0.0 if v is None else v for v in sma50],
+        "kc_lower": [0.0 if v is None else v for v in kc_lower],
+        "close_vs_ema_50": close_vs_ema_50,
+        "close_vs_sma_50": close_vs_sma_50,
         "close": closes,
         "open": opens,
     }
