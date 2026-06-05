@@ -494,10 +494,10 @@ function pollSignals(){
       fetch('/api/strategy/model').then(r=>r.json()).then(m=>{
         let html='<div style="font-size:11px;color:var(--text2);">';
         if(m.loaded){
-          html+='LightGBM '+m.version+' | '+m.champion+'<br>';
+          html+=(m.model_type||'Model')+' '+m.version+'<br>';
           html+='树深:'+m.model.max_depth+' 树数:'+m.model.n_estimators+' 叶子:'+m.model.num_leaves+'<br>';
-          html+='特征:'+m.n_features+' | WR:'+(m.test_wr*100).toFixed(0)+'% PF:'+m.test_pf.toFixed(2)+'<br>';
-          html+='持仓:'+m.trade.max_hold_bars+'bars | 仅做多';
+          html+='特征:'+m.n_features+' | WR:'+(m.test.win_rate*100).toFixed(0)+'% PF:'+m.test.profit_factor.toFixed(2)+'<br>';
+          html+='持仓:'+m.trading.max_hold+'bars | '+m.trading.position;
         }else{
           html+='模型未加载';
         }
