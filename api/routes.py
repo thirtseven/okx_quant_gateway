@@ -713,7 +713,7 @@ def register_routes(app, state_ref, state_lock_ref, compute_signal_ref, notify_s
             local_state["strategy_log"] = []
         state_dirty[0] = True
         save_state()
-        import database
+        import database.mysql as database
         database.save_open_positions([])
         database.save_position_history([])
         return jsonify({"ok": True, "msg": "positions and history cleared"})
