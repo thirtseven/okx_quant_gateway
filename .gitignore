@@ -1,0 +1,28 @@
+# ---- 个人数据/凭据 (绝不提交) ----
+smtp_config.json
+*.env
+.env
+.kaggle/
+
+# ---- 依赖 ----
+node_modules/
+
+# ---- Python 缓存 ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 模型产物/训练数据 ----
+models/*.txt
+models/best_chromosome.json
+models/feature_manifest.json
+models/strategy_attribution.json
+models/MODEL_MANIFEST.json
+models/archive_v18_15coin/
+*.parquet
+
+# ---- 环境/本地配置 ----
+*.log
+.DS_Store
+package.json
+package-lock.json

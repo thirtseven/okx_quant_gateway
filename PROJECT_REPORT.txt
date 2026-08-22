@@ -1,0 +1,134 @@
+================================================================================
+量化交易网关完整项目报表
+================================================================================
+生成时间: 2026-08-21 | 项目: OKX 永续量化交易网关(模型驱动)
+--------------------------------------------------------------------------------
+
+一、项目目标
+--------------------------------------------------------------------------------
+构建一个由 LightGBM 模型驱动的加密量化交易网关: 从 OKX 永续合约获取实时数据
+-> 模型打分 -> 生成 BUY 信号 -> 模拟仓位跟随 + 计算 PnL -> 邮件提醒,
+并配备专业的交易终端前端。
+
+二、系统架构
+--------------------------------------------------------------------------------
+OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(LightGBM 64棵树)
+                                                          |
+                                                          |-> signal_weights() -> BUY/HOLD 信号
+                                                          |-> PaperTrader(模拟仓位+PnL)
+                                                          +-> notify.py(SMTP提醒)
+                                        FastAPI 网关 (127.0.0.1:8321)
+                                                          |
+                                        前端 index.html (Binance Pro风格)
+
+三、已完成工作明细
+--------------------------------------------------------------------------------
+1. 独立代理部署(摆脱 FlClash)
+   - mihomo 二进制: ~/.local/bin/mihomo v1.19.30
+   - 配置: ~/.config/mihomo/config.yaml (mixed-port 7891, bind-address 127.0.0.1,
+     allow-lan false, 无 TUN, 无 fake-ip, 不碰系统网络)
+   - 订阅: 机场订阅源 自动拉取 (54 节点: 23 hysteria2 + 30 vless + 1 vmess)
+   - 自启: start-mihomo.sh 幂等脚本挂 bashrc
+   - 验证: 无 TUN 虚拟网卡, 无系统代理环境变量, 仅绑 127.0.0.1
+   - 端口: 用 7891 而非 7890 (7890 被 FlClash 残留 socket 占用; 当前 7890 已恢复)
+
+2. 模型适配与持久化
+   - 模型: LightGBM 64 棵树, 25 特征, seed=37, sharpe 1.202
+   - 导出: models/short_term_ta_ga_model.txt (67KB, SHA256 固化)
+   - 训练数据: OKX 永续 4H, 2023 至今, 69 币池
+   - 数据对齐: 25 特征 diff <= 3e-6
+
+3. 模型真实性验证
+   - signal_method = model (非 momentum fallback)
+   - model_prob: BTC 0.3757 / BICO 0.3753 / AAVE 0.3689
+   - model_ready = True, model_error = None, coverage = [15, 15]
+
+4. 前端重构(视觉升级)
+   - 设计: Binance Pro/FreqUI (#0b0e14 背景, #0ecb81 涨, #f6465d 跌, #f0b90b 金)
+   - 技术: 单文件 HTML 1720 行, Lightweight Charts v4, glassmorphism
+   - 功能保留: watchlist/chart/信号/策略/equity/切换/toast 全保留
+   - 新增: 模拟仓位面板
+
+5. 模拟仓位(Paper Trading)
+   - paper.py: PaperTrader (10000 USDT 等权, 跟随 BUY 信号, 手续费 0.15%)
+   - 端点: GET /api/paper
+   - 实测: 开 5 仓, 总权益 9985 (-15 手续费)
+
+6. SMTP 提醒模块
+   - notify.py: 连接复用+重连+线程锁+去重, 中文通知
+   - 状态: 未启用 (需配置 SMTP_SENDER/SMTP_AUTH_CODE)
+
+7. 快速重启
+   - qt-restart alias -> ~/.local/bin/qt-restart.sh
+
+四、扩展币种回测实验(关键决策依据)
+--------------------------------------------------------------------------------
+背景: 模型训练宇宙固定 15 币(coin 是 categorical 特征)。新币用模型得到固定
+默认值 0.3109(无区分度, 实测验证)。
+
+实验: 加载 OKX 69 币数据 -> 现有模型打分 -> 按成交量排序 -> 回测对比
+
+| 宇宙        | 币数 | sharpe | return | drawdown |
+|-------------|------|--------|--------|----------|
+| 模型15币    | 15   | 5.636  | 7.096  | 0.175    |
+| 成交量前15  | 15   | 3.169  | 1.438  | 0.129    |
+| 成交量前30  | 30   | 2.888  | 1.088  | 0.186    |
+| 成交量前50  | 50   | 3.238  | 1.540  | 0.157    |
+| 全部69币    | 69   | 5.852  | 6.360  | 0.136    |
+
+混合模式(模型币=模型概率 + 新币=动量排名补充): 成交量前50 sharpe 3.498,
+远低于模型币 5.636。
+
+结论: 模型 15 币贡献全部 alpha。新币要获得真实模型概率必须重新训练。
+
+五、当前状态
+-------------------------------------------------------------------------------
+- 网关运行: tmux gateway 会话, 127.0.0.1:8321, live 模式 (OKX 直连)
+- mihomo 代理: 7891 运行中 (7890 已恢复)
+- 模型: v44, 44 主流币宇宙正常打分 (coverage [44,44], rank_IC +0.0024)
+- 前端: 重构完成
+- 模拟仓位: 工作正常
+- 网络: 机场节点曾被墙, 现已恢复
+- SMTP: 未启用 (缺环境变量)
+- 旧模型备份: models/archive_v18_15coin/
+
+六、待办事项(重新训练模型扩展币种) — 已完成 2026-08-22
+-------------------------------------------------------------------------------
+1. ✅ 设计主流币训练名单: curated_universe.py, 44 主流币 (剔除美股代币/小币种)
+2. ✅ 测试 Python+7891 代理拉取 OKX 数据 (code 0 全部通过)
+3. ✅ 写 OKX 数据下载脚本: fetch_okx_data.py + refresh_curated.py
+4. ✅ 下载/刷新 44 主流币 4H 数据 (2023-01-01 → 2026-08-21, 全部 >=1000 根)
+5. ✅ 上传 Kaggle (okx-4h-4y-curated + best-chromosome-v18) + GA 重训
+   - v42: 36 候选, 弱模型 (AUC 0.541, rank_IC -0.0002) → 拒
+   - v43: 160 候选 + 收益加权 + SL/TP 细粒度变异 → 过验证但 rank_IC 负 (回测操纵 9-44x) → 拒
+   - v44: 加预测力门槛 (median_IC>0) + 约束 SL/TP (0.10/0.12) + 换手/SLTP 使用惩罚 → 通过
+6. ✅ 回测验证 v44: OOF AUC 0.542, rank_IC +0.0024, WF IR 2.06 (10%/13%/4.4% 三折全正),
+   显著性 PASS (bootstrap CI>0, permutation p=0.001), 硬门槛全 PASS
+7. ✅ 更新网关 TRACKED_COINS(44) / _COIN_CATEGORIES(44) 同步新宇宙
+8. ✅ 重启验证全链路: model_ready=True, coverage [44,44], live 模式 OKX 直连正常
+
+七、关键文件地址速查
+--------------------------------------------------------------------------------
+- 网关主程序:   ./gateway.py
+- 数据源:       ./data_feed.py
+- 信号引擎:     ./signals.py
+- 模拟仓位:     ./paper.py
+- SMTP 提醒:    ./notify.py
+- 前端:         ./static/index.html
+- 模型(v44):    ./models/short_term_ta_ga_model.txt
+- 基因:         ./models/best_chromosome.json
+- 模型清单:     ./models/MODEL_MANIFEST.json
+- 旧模型备份:   ./models/archive_v18_15coin/
+- 回测框架:     ../quant-local/short_term_ta_ga_local.py
+- 实验脚本:     ../quant-local/exp_new_coins.py
+- 币种名单:     ../quant-local/curated_universe.py (44 主流币)
+- OKX 下载:     ../quant-local/fetch_okx_data.py
+- OKX 刷新:     ../quant-local/refresh_curated.py / refresh_stale.py
+- OKX 数据:     ../quant-local/data/okx_4h_4y_curated/ (44 币, 至 2026-08-21)
+- Kaggle 数据:  okx-4h-4y-curated + best-chromosome-v18 (Kaggle 私有)
+- mihomo 配置:  ~/.config/mihomo/config.yaml
+- 快速重启:     ~/.local/bin/qt-restart.sh + bashrc qt-restart
+
+================================================================================
+报表结束
+================================================================================
