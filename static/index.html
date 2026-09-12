@@ -736,6 +736,9 @@ header{
             <div class="panel-hd">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
               KDJ 扫描器
+              <button class="hd-btn" id="scanner-run" title="立即扫描一次" aria-label="立即扫描一次">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+              </button>
               <label class="switch" title="启用/停用扫描">
                 <input type="checkbox" id="scanner-toggle" checked/>
                 <span class="slider"></span>
@@ -1825,6 +1828,21 @@ async function fetchScanner(){
     renderScanner(d);
   }catch(e){}
 }
+async function runScanner(){
+  if(state.scanner&&!state.scanner.enabled){ toast('err','扫描器已停用','请先开启开关'); return; }
+  const btn=$('scanner-run');
+  if(btn) btn.classList.add('spin');
+  try{
+    const d=await fetchJSON(API+'/scanner/run',{method:'POST'});
+    state.scanner=d;
+    renderScanner(d);
+    toast('info','扫描完成',(d.signals||[]).length+' 个命中');
+  }catch(e){
+    toast('err','扫描失败',e.message);
+  }finally{
+    if(btn) setTimeout(()=>btn.classList.remove('spin'),400);
+  }
+}
 function renderScanner(d){
   const body=$('scanner-body');
   const meta=$('scanner-meta');
@@ -1965,6 +1983,8 @@ function bindRightTabs(){
       toast('err','扫描器切换失败',e.message);
     }
   });
+  const srun=$('scanner-run');
+  if(srun) srun.addEventListener('click',runScanner);
   $('paper-refresh').addEventListener('click',()=>{
     const btn=$('paper-refresh');
     btn.classList.add('spin');

@@ -1,6 +1,6 @@
 """scanner.py — 独立于模型筛选的 KDJ/MACD/RSI 超卖反转扫描器.
 
-每 15 分钟扫描全部跟踪币种 (4H K 线), 检测:
+手动触发 (POST /api/scanner/run) 扫描全部跟踪币种 (4H K 线), 检测:
   * KDJ (9,3,3): K/D/J 全部 < 30 (超卖区)
   * KDJ 金叉 (K 上穿 D) 发生在当前或前一根 K 线内
   * MACD DIF < 0 (运行在零轴下方低轨)

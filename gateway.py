@@ -80,8 +80,6 @@ LIVE_POLL_SECONDS: int = 30
 LIVE_HISTORY_REFRESH_LOOPS: int = 30
 # 模型信号每 2 小时更新一次 (240 loops x 30s = 2h); 其余循环保持上次信号, 仅刷新实时价格
 SIGNAL_REFRESH_LOOPS: int = 240
-# 独立扫描器每 15 分钟扫描一次 (30 loops x 30s = 15min), 与模型筛选完全独立
-SCANNER_REFRESH_LOOPS: int = 30
 
 
 def _notify_live(signals: list[dict], source: str | None, live_error: str | None, model_error: str | None) -> None:
@@ -148,11 +146,6 @@ def _live_loop() -> None:
                     for coin, frame in frames.items()
                     if not frame.empty and "close" in frame.columns
                 }
-            # 2.5) 独立扫描器: 每 15 分钟扫描全部币种 (与模型筛选完全独立)
-            scan_now = loop_count == 1 or loop_count % SCANNER_REFRESH_LOOPS == 0
-            scanner_signals: list[dict] = []
-            if scan_now and scanner.enabled:
-                scanner_signals = scanner.scan(frames)
             # 3) 写回共享状态
             with _lock:
                 _latest_state["bars"] = bars
@@ -171,11 +164,6 @@ def _live_loop() -> None:
                 buy_coins = [s["coin"] for s in signals if s.get("signal") == "BUY"]
                 paper_trader.update(buy_coins, prices)
                 _notify_live(signals, live_feed.source, live_feed.last_error, engine._model_error)
-            # 5) 扫描器通知 (仅新命中发邮件, 去重)
-            if scan_now and scanner.enabled and scanner_signals:
-                fresh = scanner.new_buys(scanner_signals)
-                if fresh:
-                    notify_scanner(fresh, live_feed.source)
         except Exception as exc:
             # 处理阶段异常绝不能让 feed 线程退出; 记录并退避后重试
             with _lock:
@@ -290,6 +278,24 @@ def scanner_toggle(payload: dict | None = None) -> dict:
         scanner.enabled = bool(payload["enabled"])
     if payload.get("reset_notified"):
         scanner.reset_notified()
+    return scanner.summary()
+
+
+@app.post("/api/scanner/run")
+def scanner_run() -> dict:
+    """手动触发一次扫描: 用当前 history_cache 快照扫描全部币种, 新命中发邮件."""
+    if not scanner.enabled:
+        return scanner.summary()
+    with _lock:
+        frames = {
+            coin: live_feed.history_cache[coin].reset_index(drop=True)
+            for coin in live_feed.coins
+            if coin in live_feed.history_cache
+        }
+    signals = scanner.scan(frames)
+    fresh = scanner.new_buys(signals)
+    if fresh:
+        notify_scanner(fresh, live_feed.source)
     return scanner.summary()
 
 
