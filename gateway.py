@@ -12,8 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from data_feed import LiveFeed
 from notify import clear_error_state, configure as smtp_configure
 from notify import get_config as smtp_get_config
-from notify import notify_error, notify_signal, test_send as smtp_test_send
+from notify import notify_error, notify_scanner, notify_signal, test_send as smtp_test_send
 from paper import PaperTrader
+from scanner import Scanner
 from signals import SignalEngine
 
 STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
@@ -21,6 +22,7 @@ STATIC_DIR: Path = Path(__file__).resolve().parent / "static"
 live_feed = LiveFeed()
 engine = SignalEngine(horizon=3)
 paper_trader = PaperTrader()
+scanner = Scanner()
 
 _lock = threading.Lock()
 _stop_event = threading.Event()
@@ -78,6 +80,8 @@ LIVE_POLL_SECONDS: int = 30
 LIVE_HISTORY_REFRESH_LOOPS: int = 30
 # 模型信号每 2 小时更新一次 (240 loops x 30s = 2h); 其余循环保持上次信号, 仅刷新实时价格
 SIGNAL_REFRESH_LOOPS: int = 240
+# 独立扫描器每 15 分钟扫描一次 (30 loops x 30s = 15min), 与模型筛选完全独立
+SCANNER_REFRESH_LOOPS: int = 30
 
 
 def _notify_live(signals: list[dict], source: str | None, live_error: str | None, model_error: str | None) -> None:
@@ -144,6 +148,11 @@ def _live_loop() -> None:
                     for coin, frame in frames.items()
                     if not frame.empty and "close" in frame.columns
                 }
+            # 2.5) 独立扫描器: 每 15 分钟扫描全部币种 (与模型筛选完全独立)
+            scan_now = loop_count == 1 or loop_count % SCANNER_REFRESH_LOOPS == 0
+            scanner_signals: list[dict] = []
+            if scan_now and scanner.enabled:
+                scanner_signals = scanner.scan(frames)
             # 3) 写回共享状态
             with _lock:
                 _latest_state["bars"] = bars
@@ -152,6 +161,7 @@ def _live_loop() -> None:
                 else:
                     signals = _latest_state["signals"]
                 _latest_state["portfolio"] = portfolio_summary
+                _latest_state["scanner"] = scanner.summary()
                 _append_equity(portfolio_summary)
                 _latest_state["live_source"] = live_feed.source
                 _latest_state["live_error"] = live_feed.last_error
@@ -161,6 +171,11 @@ def _live_loop() -> None:
                 buy_coins = [s["coin"] for s in signals if s.get("signal") == "BUY"]
                 paper_trader.update(buy_coins, prices)
                 _notify_live(signals, live_feed.source, live_feed.last_error, engine._model_error)
+            # 5) 扫描器通知 (仅新命中发邮件, 去重)
+            if scan_now and scanner.enabled and scanner_signals:
+                fresh = scanner.new_buys(scanner_signals)
+                if fresh:
+                    notify_scanner(fresh, live_feed.source)
         except Exception as exc:
             # 处理阶段异常绝不能让 feed 线程退出; 记录并退避后重试
             with _lock:
@@ -259,6 +274,23 @@ def paper_reset() -> dict:
 @app.get("/api/coins")
 def coins() -> dict:
     return {"coins": list(live_feed.coins)}
+
+
+@app.get("/api/scanner")
+def scanner_state() -> dict:
+    """独立扫描器当前状态 (启用开关 + 最近一次扫描结果)."""
+    return scanner.summary()
+
+
+@app.post("/api/scanner")
+def scanner_toggle(payload: dict | None = None) -> dict:
+    """启用/停用独立扫描器; reset_notified=true 时清空去重状态."""
+    payload = payload or {}
+    if "enabled" in payload:
+        scanner.enabled = bool(payload["enabled"])
+    if payload.get("reset_notified"):
+        scanner.reset_notified()
+    return scanner.summary()
 
 
 @app.get("/api/smtp")

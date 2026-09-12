@@ -301,6 +301,37 @@ def notify_signal(signals: list[dict], source: str | None = None) -> bool:
     return send_alert("【买入信号】" + " / ".join(buy_coins), "\n".join(lines))
 
 
+def notify_scanner(signals: list[dict], source: str | None = None) -> bool:
+    """KDJ/MACD/RSI 扫描器 BUY 信号通知 (去重由调用方负责).
+
+    signals: scanner.scan() 返回的 list[dict], 每项含 coin/close/k/d/j/dif/rsi.
+    """
+    if not is_configured() or not signals:
+        return False
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        "OKX量化网关 — KDJ超卖反转扫描", "",
+        f"时间: {now}",
+        f"数据源: {source or 'N/A'}",
+        f"命中数: {len(signals)}",
+        "",
+        "─── 买入信号与指标 ───",
+    ]
+    for s in signals:
+        coin = s["coin"]
+        entry = float(s.get("close") or 0)
+        lines.extend([
+            f"  币种: {coin}",
+            f"  现价: {entry:.4f}",
+            f"  KDJ: K={s.get('k')} D={s.get('d')} J={s.get('j')} (均<30, 金叉)",
+            f"  DIF: {s.get('dif')} (零轴下方)",
+            f"  RSI12: {s.get('rsi')} (未跌破30)",
+            "",
+        ])
+    lines.extend(["---", "来自 OKX 量化网关"])
+    return send_alert("【KDJ扫描】" + " / ".join(s["coin"] for s in signals), "\n".join(lines))
+
+
 def notify_error(msg: str, kind: str = "error") -> bool:
     """错误/告警通知 (去重: 同类同消息只发一次, 恢复后重置)."""
     if not is_configured() or not msg:
