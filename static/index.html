@@ -1852,10 +1852,15 @@ function renderScanner(d){
   const sigs=d.signals||[];
   if(meta){
     const last=d.last_scan?fmtClock(d.last_scan):'--';
-    meta.textContent=(d.enabled?'':'已停用 · ')+sigs.length+' 命中 · '+last;
+    const btc=d.btc_uptrend===false?'BTC↓':'BTC↑';
+    meta.textContent=(d.enabled?'':'已停用 · ')+btc+' · '+sigs.length+' 命中 · '+last;
   }
   if(!d.enabled){
     body.innerHTML='<div class="sig-empty">扫描器已停用</div>';
+    return;
+  }
+  if(d.btc_uptrend===false){
+    body.innerHTML='<div class="sig-empty">BTC 不在上涨趋势，本次未扫描</div>';
     return;
   }
   if(!sigs.length){

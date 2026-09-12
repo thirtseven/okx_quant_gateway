@@ -7,6 +7,12 @@
   * RSI(12) >= 30 (未跌破 30, 排除自由落体)
 全部满足 -> BUY 信号 + 邮件通知.
 
+市场过滤: 仅当 BTC 处于 4H 上涨趋势时才扫描:
+  * RSI(12) 在 (30, 70) 区间
+  * MACD DIF > 0
+  * KDJ 非死叉 (K >= D)
+  * 收盘价 > EMA20 且 > EMA50
+
 与模型筛选完全独立: 不依赖 LightGBM, 不参与模型排名/模拟仓位.
 """
 
@@ -83,9 +89,43 @@ class Scanner:
         self._signals: list[dict] = []
         self._last_error: str | None = None
         self._notified: set[str] = set()
+        self._btc_uptrend_ok: bool = False
+
+    def _btc_uptrend(self, frame: pd.DataFrame | None) -> bool:
+        """BTC 4H 上涨趋势过滤: RSI(12)∈(30,70) 且 DIF>0 且 KDJ 非死叉 且 价>EMA20/EMA50."""
+        if frame is None or frame.empty or len(frame) < 60:
+            return False
+        close = frame["close"].astype(float)
+        high = frame["high"].astype(float)
+        low = frame["low"].astype(float)
+        k, d, _j = compute_kdj(high, low, close)
+        dif, _dea, _macd = compute_macd(close)
+        rsi = compute_rsi(close)
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        ema50 = close.ewm(span=50, adjust=False).mean()
+        i = -1
+        return bool(
+            30.0 < rsi.iloc[i] < 70.0
+            and dif.iloc[i] > 0.0
+            and k.iloc[i] >= d.iloc[i]
+            and close.iloc[i] > ema20.iloc[i]
+            and close.iloc[i] > ema50.iloc[i]
+        )
 
     def scan(self, frames: dict[str, pd.DataFrame]) -> list[dict]:
-        """扫描全部币种, 返回满足条件的 BUY 信号列表 (含指标明细)."""
+        """扫描全部币种, 返回满足条件的 BUY 信号列表 (含指标明细).
+
+        BTC 不在上涨趋势时直接返回空 (市场过滤).
+        """
+        btc_ok = self._btc_uptrend(frames.get("BTC-USDT"))
+        with self._lock:
+            self._btc_uptrend_ok = btc_ok
+        if not btc_ok:
+            with self._lock:
+                self._last_scan = time.time()
+                self._signals = []
+                self._last_error = None
+            return []
         out: list[dict] = []
         for coin, frame in frames.items():
             if frame is None or frame.empty or len(frame) < MIN_BARS:
@@ -161,5 +201,6 @@ class Scanner:
                 "enabled": self.enabled,
                 "last_scan": self._last_scan,
                 "last_error": self._last_error,
+                "btc_uptrend": self._btc_uptrend_ok,
                 "signals": list(self._signals),
             }

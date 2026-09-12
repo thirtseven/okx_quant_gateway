@@ -5,6 +5,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import pandas as pd
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -283,7 +284,7 @@ def scanner_toggle(payload: dict | None = None) -> dict:
 
 @app.post("/api/scanner/run")
 def scanner_run() -> dict:
-    """手动触发一次扫描: 用当前 history_cache 快照扫描全部币种, 新命中发邮件."""
+    """手动触发一次扫描: 用当前最新数据 (已收线 + 当前未收线 bar) 扫描全部币种, 新命中发邮件."""
     if not scanner.enabled:
         return scanner.summary()
     with _lock:
@@ -292,6 +293,15 @@ def scanner_run() -> dict:
             for coin in live_feed.coins
             if coin in live_feed.history_cache
         }
+        # 追加当前未收线 bar, 保证扫描使用最新数据而非仅已收线历史
+        for coin, bar in _latest_state["bars"].items():
+            if coin not in frames or not len(frames[coin]):
+                continue
+            ts = pd.Timestamp(bar["timestamp"])
+            if ts > frames[coin]["timestamp"].iloc[-1]:
+                frames[coin] = pd.concat(
+                    [frames[coin], pd.DataFrame([bar])], ignore_index=True
+                )
     signals = scanner.scan(frames)
     fresh = scanner.new_buys(signals)
     if fresh:
