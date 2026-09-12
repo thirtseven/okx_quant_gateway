@@ -74,8 +74,10 @@ def _append_equity(summary: dict) -> None:
 
 
 LIVE_POLL_SECONDS: int = 30
-# 全量 200-bar 历史每 2 小时刷新一次 (240 loops x 30s = 2h), 平时只增量拉最近 1 根
-LIVE_HISTORY_REFRESH_LOOPS: int = 240
+# 全量 200-bar 历史每 15 分钟刷新一次 (30 loops x 30s = 15min), 确保最新收线 bar 及时进入模型
+LIVE_HISTORY_REFRESH_LOOPS: int = 30
+# 模型信号每 2 小时更新一次 (240 loops x 30s = 2h); 其余循环保持上次信号, 仅刷新实时价格
+SIGNAL_REFRESH_LOOPS: int = 240
 
 
 def _notify_live(signals: list[dict], source: str | None, live_error: str | None, model_error: str | None) -> None:
@@ -99,7 +101,7 @@ def _live_loop() -> None:
         refresh_history = first or loop_count % LIVE_HISTORY_REFRESH_LOOPS == 0
         try:
             candles = live_feed.refresh(
-                limit=200 if refresh_history else 1,
+                limit=200 if refresh_history else 2,
                 fill_history=refresh_history,
                 max_workers=8,
             )
@@ -112,39 +114,60 @@ def _live_loop() -> None:
         backoff = LIVE_POLL_SECONDS
         first = False
         loop_count += 1
-        with _lock:
-            _latest_state["bars"] = {}
-            for coin, candle in candles.items():
-                _latest_state["bars"][coin] = {
-                    "timestamp": str(candle.timestamp),
-                    "open": candle.open,
-                    "high": candle.high,
-                    "low": candle.low,
-                    "close": candle.close,
-                    "volume": candle.volume,
+        compute_signal = loop_count == 1 or loop_count % SIGNAL_REFRESH_LOOPS == 0
+        try:
+            # 1) 加锁只做快照, 不在锁内跑模型 (避免模型推理阻塞 API 请求)
+            with _lock:
+                bars = {
+                    coin: {
+                        "timestamp": str(candle.timestamp),
+                        "open": candle.open,
+                        "high": candle.high,
+                        "low": candle.low,
+                        "close": candle.close,
+                        "volume": candle.volume,
+                    }
+                    for coin, candle in candles.items()
                 }
-            frames = {}
-            for coin in live_feed.coins:
-                if coin in live_feed.history_cache:
-                    frames[coin] = live_feed.history_cache[coin].reset_index(drop=True)
-            signals = engine.signal_weights(frames)
-            prices = {
-                coin: float(frame.iloc[-1]["close"])
-                for coin, frame in frames.items()
-                if not frame.empty and "close" in frame.columns
-            }
-            _latest_state["signals"] = signals
+                frames = {
+                    coin: live_feed.history_cache[coin].reset_index(drop=True)
+                    for coin in live_feed.coins
+                    if coin in live_feed.history_cache
+                }
+            # 2) 模型推理 + 组合统计 (可能耗时, 放锁外)
+            signals: list[dict] = engine.signal_weights(frames) if compute_signal else []
             portfolio_summary = engine.portfolio_summary(frames)
-            _latest_state["portfolio"] = portfolio_summary
-            _append_equity(portfolio_summary)
-            live_source = live_feed.source
-            live_error = live_feed.last_error
-            _latest_state["live_source"] = live_source
-            _latest_state["live_error"] = live_error
-            _latest_state["updated_at"] = time.time()
-        buy_coins = [s["coin"] for s in signals if s.get("signal") == "BUY"]
-        paper_trader.update(buy_coins, prices)
-        _notify_live(signals, live_source, live_error, engine._model_error)
+            prices = {coin: float(candle.close) for coin, candle in candles.items()}
+            if not prices:
+                prices = {
+                    coin: float(frame.iloc[-1]["close"])
+                    for coin, frame in frames.items()
+                    if not frame.empty and "close" in frame.columns
+                }
+            # 3) 写回共享状态
+            with _lock:
+                _latest_state["bars"] = bars
+                if compute_signal:
+                    _latest_state["signals"] = signals
+                else:
+                    signals = _latest_state["signals"]
+                _latest_state["portfolio"] = portfolio_summary
+                _append_equity(portfolio_summary)
+                _latest_state["live_source"] = live_feed.source
+                _latest_state["live_error"] = live_feed.last_error
+                _latest_state["updated_at"] = time.time()
+            # 4) 调仓 + 通知 (仅信号重算轮次)
+            if compute_signal:
+                buy_coins = [s["coin"] for s in signals if s.get("signal") == "BUY"]
+                paper_trader.update(buy_coins, prices)
+                _notify_live(signals, live_feed.source, live_feed.last_error, engine._model_error)
+        except Exception as exc:
+            # 处理阶段异常绝不能让 feed 线程退出; 记录并退避后重试
+            with _lock:
+                _latest_state["live_error"] = f"process error: {type(exc).__name__}: {exc}"
+            backoff = min(backoff * 2, 300)
+            _stop_event.wait(backoff)
+            continue
         _stop_event.wait(backoff)
 
 
@@ -157,6 +180,7 @@ def restart_feed(payload: dict | None = None) -> dict:
     if _feed_thread is not None:
         _feed_thread.join(timeout=10)
     _stop_event.clear()
+    engine.reset_runtime_state()
     with _lock:
         _latest_state["bars"] = {}
         _latest_state["signals"] = []
@@ -219,10 +243,10 @@ def equity() -> dict:
 def paper() -> dict:
     prices: dict[str, float] = {}
     with _lock:
-        for coin in live_feed.coins:
-            frame = live_feed.history_cache.get(coin)
-            if frame is not None and not frame.empty:
-                prices[coin] = float(frame.iloc[-1]["close"])
+        for coin, bar in _latest_state["bars"].items():
+            close = bar.get("close")
+            if close is not None:
+                prices[coin] = float(close)
     return paper_trader.summary(prices)
 
 
@@ -286,7 +310,9 @@ def history(coin: str, n: int = Query(200, ge=1, le=500)) -> dict:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    resp = FileResponse(STATIC_DIR / "index.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

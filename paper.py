@@ -49,9 +49,13 @@ class PaperTrader:
     def _open(self, coin: str, price: float, capital: float) -> None:
         if price is None or price <= 0:
             return
-        size = capital / price
-        fee = capital * self.FEE_RATE
-        self.cash -= capital + fee
+        if capital <= 0:
+            return
+        # capital 为含手续费的预算: 净投入 = capital/(1+fee), fee 单独计提
+        net = capital / (1 + self.FEE_RATE)
+        size = net / price
+        fee = net * self.FEE_RATE
+        self.cash -= net + fee
         self.positions[coin] = Position(
             coin=coin,
             entry_price=price,
@@ -83,16 +87,78 @@ class PaperTrader:
         ))
 
     def update(self, buy_coins: list[str], prices: dict[str, float]) -> None:
-        """跟随最新 BUY 信号调仓. buy_coins: BUY 信号币集合."""
+        """目标权重再平衡: 只持有 BUY 信号币, 等权分配全部资金.
+
+        平掉不在 BUY 集合的币; 对每个 BUY 币按 总权益/币数 计算目标市值,
+        超额平仓、不足补开, 确保权重始终均衡 (非增量式, 避免集合变化时权重失衡).
+        """
         with self._lock:
             target = set(buy_coins)
+            # 1) 平掉退出 BUY 集合的币
             for coin in list(self.positions):
                 if coin not in target:
                     self._close(coin, prices.get(coin))
-            per_coin = self.initial_capital / max(len(target), 1) * (1 - self.FEE_RATE)
+            if not target:
+                return
+            # 2) 计算总权益 (现金 + 当前持仓市值)
+            equity = self.cash
+            for coin, pos in self.positions.items():
+                px = prices.get(coin, pos.entry_price)
+                equity += pos.size * px
+            # 3) 每币目标市值 (预留手续费)
+            target_val = equity / len(target) / (1 + self.FEE_RATE)
+            # 4) 再平衡: 超额平掉, 不足补开
             for coin in sorted(target):
-                if coin not in self.positions:
-                    self._open(coin, prices.get(coin), per_coin)
+                px = prices.get(coin)
+                if px is None or px <= 0:
+                    continue
+                pos = self.positions.get(coin)
+                cur_val = pos.size * px if pos else 0.0
+                diff = target_val - cur_val
+                if diff > 0:
+                    # 补仓到目标市值
+                    if pos is None:
+                        self._open(coin, px, target_val)
+                    else:
+                        # 补仓: diff 为目标新增市值(预算已含手续费), 现金支出即 diff
+                        add_size = diff / px / (1 + self.FEE_RATE)
+                        self.cash -= diff
+                        self.positions[coin] = Position(
+                            coin=coin,
+                            entry_price=px,
+                            size=pos.size + add_size,
+                            entry_ts=pos.entry_ts,
+                            weight=target_val / self.initial_capital,
+                        )
+                elif diff < -1e-9:
+                    # 超出目标: 平掉部分 (全额平掉交给 _close, 避免回款重复计算)
+                    close_size = -diff / px
+                    new_size = pos.size - close_size
+                    if new_size <= 1e-12:
+                        self._close(coin, px)
+                    else:
+                        proceeds = close_size * px
+                        fee = proceeds * self.FEE_RATE
+                        self.cash += proceeds - fee
+                        # 记录已实现的部分盈亏, 保证 realized_pnl 与总权益一致
+                        entry_fee = close_size * pos.entry_price * self.FEE_RATE
+                        self.closed_trades.append(ClosedTrade(
+                            coin=coin,
+                            entry_price=pos.entry_price,
+                            exit_price=px,
+                            size=close_size,
+                            pnl=proceeds - close_size * pos.entry_price - entry_fee - fee,
+                            return_pct=(px / pos.entry_price - 1.0) * 100.0,
+                            entry_ts=pos.entry_ts,
+                            exit_ts=self._now(),
+                        ))
+                        self.positions[coin] = Position(
+                            coin=coin,
+                            entry_price=pos.entry_price,
+                            size=new_size,
+                            entry_ts=pos.entry_ts,
+                            weight=target_val / self.initial_capital,
+                        )
 
     def summary(self, prices: dict[str, float] | None = None) -> dict:
         """持仓 + 实现盈亏 + 浮动盈亏 + 总权益."""

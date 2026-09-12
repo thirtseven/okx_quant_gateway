@@ -125,6 +125,7 @@ class SignalEngine:
             risk=_V18.RiskGenes(
                 sizing_mode=str(risk_raw["sizing_mode"]),
                 holding_bars=int(risk_raw["holding_bars"]),
+                sl_tp_mode=str(risk_raw.get("sl_tp_mode") or "fixed"),
                 stop_loss=float(risk_raw["stop_loss"]),
                 take_profit=float(risk_raw["take_profit"]),
                 trailing_stop=float(risk_raw["trailing_stop"]),
@@ -151,7 +152,13 @@ class SignalEngine:
         deployed model is byte-identical to the verified one instead of being
         re-fitted on every gateway restart.
         """
-        import lightgbm as lgb
+        try:
+            import lightgbm as lgb
+        except Exception as exc:
+            # 缺依赖不能拖垮整个网关导入; 记录错误并回退到动量排名
+            self._model_ready = False
+            self._model_error = f"lightgbm import failed: {type(exc).__name__}: {exc}"
+            return False
 
         try:
             if not MODEL_FILE.exists():
@@ -173,25 +180,36 @@ class SignalEngine:
             return False
 
     def _strategy_confirmation_features(self) -> list[str]:
-        """Extra ta_* columns the strategy's confirmation filter needs (beyond model features)."""
+        """Extra ta_* columns the strategy's confirmation filter + ATR stop/take need."""
         strat = self.strategy
+        extra: list[str] = []
+        # ATR 动态止盈止损需要 ta_atr_24
+        if strat is not None and getattr(strat.risk, "sl_tp_mode", "fixed") == "atr":
+            if "ta_atr_24" not in self.features:
+                extra.append("ta_atr_24")
         if strat is None or not strat.signal.confirmation_window:
-            return []
+            return extra
         cw = int(strat.signal.confirmation_window)
         if strat.signal.mode == "trend_following":
             # 回测中 trend_following 用确认窗口做 ADX 过滤, 与 confirmation_indicator 无关
             feat = f"ta_adx_{max(6, cw)}"
-            return [feat] if feat not in self.features else []
+            if feat not in self.features and feat not in extra:
+                extra.append(feat)
+            return extra
         if strat.signal.mode == "turtle_breakout":
             feat = f"ta_donchian_{cw}"
-            return [feat] if feat not in self.features else []
+            if feat not in self.features and feat not in extra:
+                extra.append(feat)
+            return extra
         if strat.signal.mode in {"momentum_confirmation", "mean_reversion_confirmation"}:
             ind = strat.signal.confirmation_indicator
             if not ind:
-                return []
+                return extra
             feat = f"ta_{ind}_{cw}"
-            return [feat] if feat not in self.features else []
-        return []
+            if feat not in self.features and feat not in extra:
+                extra.append(feat)
+            return extra
+        return extra
 
     def _compute_ta_features(self, coins: dict[str, pd.DataFrame]) -> None:
         """Compute only the ta_* columns required by self.features + strategy confirmation.
@@ -204,6 +222,7 @@ class SignalEngine:
         from ta.trend import ADXIndicator, IchimokuIndicator
         from ta.volume import ChaikinMoneyFlowIndicator, MFIIndicator
 
+        known = {"adx", "cmf", "ichimoku", "mfi", "roc", "stoch", "atr"}
         needed: list[tuple[str, str, int]] = []
         wanted = list(self.features) + self._strategy_confirmation_features()
         for feat in wanted:
@@ -212,9 +231,19 @@ class SignalEngine:
             parts = feat.split("_")
             if len(parts) < 3:
                 continue
-            if feat not in needed and not any(f[0] == feat for f in needed):
-                needed.append((feat, parts[1], int(parts[2])))
+            if any(f[0] == feat for f in needed):
+                continue
+            try:
+                window = int(parts[2])
+            except ValueError:
+                continue
+            needed.append((feat, parts[1], window))
         if not needed:
+            return
+        if any(indicator not in known for _, indicator, _ in needed):
+            # 出现未覆盖的指标: 一次性回退到完整 add_ta_bank, 避免在循环中途
+            # return 导致部分币种缺列 (以及重复 concat 造成列名重复)
+            _V18.add_ta_bank(coins)
             return
 
         for coin, frame in coins.items():
@@ -235,12 +264,28 @@ class SignalEngine:
                     new_cols[feat] = (ROCIndicator(close, window=window).roc() / 100.0).astype("float32")
                 elif indicator == "stoch":
                     new_cols[feat] = (StochasticOscillator(high, low, close, window=window, smooth_window=max(2, window // 3)).stoch_signal() / 100.0).astype("float32")
-                else:
-                    _V18.add_ta_bank(coins)
-                    return
+                elif indicator == "atr":
+                    from ta.volatility import AverageTrueRange
+                    atr = AverageTrueRange(high, low, close, window=window).average_true_range()
+                    new_cols[feat] = (atr / close).astype("float32")
             frame = pd.concat([frame, pd.DataFrame(new_cols)], axis=1)
             frame.replace([np.inf, -np.inf], np.nan, inplace=True)
             coins[coin] = frame
+
+    @staticmethod
+    def _writeback(frame: pd.DataFrame, feats: pd.DataFrame, col: str) -> None:
+        """把 feats 的某列按尾部对齐写回 frame (长度不等时取尾部 min 段).
+
+        frame 可能长于 FEATURE_HISTORY 而被裁剪, 直接按数组长度赋值会抛
+        Length mismatch; 这里按尾部对齐, 保证任意长度差下都安全.
+        """
+        if col in frame.columns or col not in feats.columns:
+            return
+        values = feats[col].to_numpy(dtype="float32")
+        n = min(len(frame), len(values))
+        if n <= 0:
+            return
+        frame.loc[frame.index[-n:], col] = values[-n:]
 
     def _model_probs(self, frames: dict[str, pd.DataFrame]) -> dict[str, float]:
         """Score the latest bar of each coin with the live LightGBM model.
@@ -282,15 +327,16 @@ class SignalEngine:
             self._last_coverage = (len(smoothed), len(trimmed))
             self._model_error = None
             # 回写确认特征到原 frames, 供 signal_weights 的确认过滤使用
+            confirm_cols = self._strategy_confirmation_features()
             for coin, f in feats.items():
                 frame = frames.get(coin)
                 if frame is None:
                     continue
-                for col in self._strategy_confirmation_features():
-                    if col in f.columns and col not in frame.columns:
-                        frame[col] = f[col].to_numpy(dtype="float32")[-len(frame):]
-                if "base_ret_24" in f.columns and "base_ret_24" not in frame.columns:
-                    frame["base_ret_24"] = f["base_ret_24"].to_numpy(dtype="float32")[-len(frame):]
+                for col in confirm_cols:
+                    self._writeback(frame, f, col)
+                self._writeback(frame, f, "base_ret_24")
+                # ATR 回写: 供 ATR 动态止盈止损使用 (缺失则退化为固定 0.02)
+                self._writeback(frame, f, "ta_atr_24")
             return smoothed
         except Exception as exc:
             self._model_error = f"{type(exc).__name__}: {exc}"
@@ -307,6 +353,13 @@ class SignalEngine:
     @property
     def model_dict(self) -> dict | None:
         return asdict(self.model_genes) if self.model_genes is not None else None
+
+    def reset_runtime_state(self) -> None:
+        """清空去抖/概率平滑等运行时状态 (feed 重启时调用, 避免跨重启残留旧信号)."""
+        self._sig_buf = {}
+        self._last_sig_state = {}
+        self._smooth_probs = {}
+        self._last_coverage = None
 
     def compute_features(self, frame: pd.DataFrame) -> pd.DataFrame:
         if not self._ready:
@@ -440,7 +493,8 @@ class SignalEngine:
             method = "momentum"
 
         strat = self.strategy
-        top_k = max(2, int(strat.top_k))
+        # 强制最大 5 仓: top_k 上限 5, 单币仓位上限 20%
+        top_k = min(5, max(2, int(strat.top_k)))
         quantile = float(strat.quantile)
 
         cutoff = float(s.quantile(quantile)) if len(s) > 1 else float(s.min())
@@ -454,7 +508,7 @@ class SignalEngine:
         threshold = float(strat.signal.threshold)
         sizing = strat.risk.sizing_mode
         cash_buffer = float(strat.risk.cash_buffer)
-        max_position = float(strat.risk.max_position)
+        max_position = 0.20  # 最大5仓, 每仓上限20%
         target_total = min(1.0 - cash_buffer, max_position * len(top))
         if sizing == "score_weighted":
             scores_arr = s[top].clip(lower=0.0).to_numpy(dtype="float64")
@@ -482,6 +536,17 @@ class SignalEngine:
                 # 动量回退: 排名前 60% 视为 BUY
                 raw_buy = ranks[coin] >= 0.6
             buy = self._debounce_buy(coin, raw_buy)
+            # 止盈止损: ATR 模式按该币当前 ATR 动态计算, fixed 用固定百分比
+            sl_pct = float(strat.risk.stop_loss)
+            tp_pct = float(strat.risk.take_profit)
+            if strat.risk.sl_tp_mode == "atr":
+                frame = frames[coin]
+                atr = None
+                if "ta_atr_24" in frame.columns:
+                    atr = frame["ta_atr_24"].iloc[-1]
+                atr_val = float(atr) if atr is not None and pd.notna(atr) and float(atr) > 0 else 0.02
+                sl_pct = strat.risk.stop_loss * atr_val
+                tp_pct = strat.risk.take_profit * atr_val
             item: dict = {
                 "coin": coin,
                 "rank": round(ranks[coin], 3),
@@ -495,8 +560,9 @@ class SignalEngine:
                 "sizing": sizing,
                 "cash_buffer": round(cash_buffer, 4),
                 "max_position": round(max_position, 4),
-                "take_profit": round(float(strat.risk.take_profit), 4),
-                "stop_loss": round(float(strat.risk.stop_loss), 4),
+                "sl_tp_mode": strat.risk.sl_tp_mode,
+                "take_profit": round(tp_pct, 4),
+                "stop_loss": round(sl_pct, 4),
             }
             if method == "model":
                 item["model_prob"] = round(model_probs[coin], 6)

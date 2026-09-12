@@ -43,6 +43,7 @@ _SMTP_TO = [t.strip() for t in (os.environ.get("SMTP_TO") or "").split(",") if t
 
 # ---- 连接复用状态 ----
 _SMTP_LOCK = threading.Lock()
+_SMTP_SEND_LOCK = threading.Lock()  # 串行化 sendmail, 防止多线程共用同一连接交错发送
 _SMTP_INSTANCE: smtplib.SMTP | None = None
 _SMTP_CONFIG_HASH: tuple | None = None
 _SMTP_LAST_ERROR: str | None = None
@@ -99,7 +100,10 @@ def configure(sender: str = "", auth_code: str = "", host: str = "", port: int =
             "to": ",".join(_SMTP_TO),
         }
         try:
-            CONFIG_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = CONFIG_FILE.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp.replace(CONFIG_FILE)  # 原子替换, 防止写一半崩溃损坏配置
         except Exception as exc:
             logger.error("[SMTP] config save failed: %s", exc)
     reset()
@@ -223,7 +227,8 @@ def send_alert(subject: str, body: str) -> bool:
         msg["Subject"] = Header(subject, "utf-8")
         msg["From"] = formataddr((str(_SMTP_SENDER.split("@")[0]), _SMTP_SENDER))
         msg["To"] = ", ".join(_to_list())
-        conn.sendmail(_SMTP_SENDER, _to_list(), msg.as_string())
+        with _SMTP_SEND_LOCK:
+            conn.sendmail(_SMTP_SENDER, _to_list(), msg.as_string())
         logger.info("[SMTP] Sent alert to %s", _to_list())
         return True
     except Exception as exc:
@@ -233,23 +238,26 @@ def send_alert(subject: str, body: str) -> bool:
 
 
 def notify_signal(signals: list[dict], source: str | None = None) -> bool:
-    """BUY 信号通知 (仅当模型得分达到买入阈值时发送; 去重: BUY 币集合变化才发).
+    """BUY 信号通知 (信号过弱不推送; 去重: BUY 币集合变化才发, 已推送过的币不重复).
+
+    信号强度判定: model_prob 须达到策略阈值的一定比例 (默认 80% 以上) 才算强信号.
+    弱信号(概率远低于模型阈值)不推送, 避免噪音邮件.
 
     signals: signal_weights() 返回的 list[dict]. 每项含 coin/signal/model_prob/
     threshold/close/take_profit/stop_loss. 邮件内容含买入价与止盈/止损卖出点位.
     """
     if not is_configured() or not signals:
         return False
+    STRENGTH_RATIO = 0.80  # model_prob 需 >= threshold * 0.80 才算强信号
     buys: list[dict] = []
     for s in signals:
         if s.get("signal") != "BUY":
             continue
         prob = s.get("model_prob")
         thr = s.get("threshold")
-        if prob is None or thr is None:
+        if prob is None:
             continue
-        if float(prob) < float(thr):
-            # 模型得分未达买入阈值, 不视为可执行 BUY
+        if thr is not None and float(prob) < float(thr) * STRENGTH_RATIO:
             continue
         buys.append(s)
     if not buys:
@@ -263,10 +271,10 @@ def notify_signal(signals: list[dict], source: str | None = None) -> bool:
 
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     lines = [
-        "OKX量化网关 — 买入信号 (达阈值)", "",
+        "OKX量化网关 — 买入信号", "",
         f"时间: {now}",
         f"数据源: {source or 'N/A'}",
-        f"达标 BUY 数: {len(buy_coins)}",
+        f"BUY 信号数: {len(buy_coins)}",
         "",
         "─── 买入信号与点位 ───",
     ]
@@ -290,7 +298,7 @@ def notify_signal(signals: list[dict], source: str | None = None) -> bool:
             "",
         ])
     lines.extend(["---", "来自 OKX 量化网关"])
-    return send_alert("【买入信号·达标】" + " / ".join(buy_coins), "\n".join(lines))
+    return send_alert("【买入信号】" + " / ".join(buy_coins), "\n".join(lines))
 
 
 def notify_error(msg: str, kind: str = "error") -> bool:

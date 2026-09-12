@@ -12,7 +12,7 @@
 
 二、系统架构
 --------------------------------------------------------------------------------
-OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(LightGBM 64棵树)
+OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(LightGBM 183棵树 v49)
                                                           |
                                                           |-> signal_weights() -> BUY/HOLD 信号
                                                           |-> PaperTrader(模拟仓位+PnL)
@@ -33,15 +33,15 @@ OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(Ligh
    - 端口: 用 7891 而非 7890 (7890 被 FlClash 残留 socket 占用; 当前 7890 已恢复)
 
 2. 模型适配与持久化
-   - 模型: LightGBM 64 棵树, 25 特征, seed=37, sharpe 1.202
-   - 导出: models/short_term_ta_ga_model.txt (67KB, SHA256 固化)
-   - 训练数据: OKX 永续 4H, 2023 至今, 69 币池
+   - 模型: LightGBM 183 棵树 (v49), 25 特征, seed=37, 回测 sharpe 8.44 / WF IR 1.33
+   - 导出: models/short_term_ta_ga_model.txt (197KB, SHA256 固化)
+   - 训练数据: OKX 永续 4H, 2023 至今, 44 主流币池
    - 数据对齐: 25 特征 diff <= 3e-6
 
 3. 模型真实性验证
    - signal_method = model (非 momentum fallback)
-   - model_prob: BTC 0.3757 / BICO 0.3753 / AAVE 0.3689
-   - model_ready = True, model_error = None, coverage = [15, 15]
+   - model_prob: TRX 0.3946 / BTC 0.3555 / TAO 0.3464 (2026-09-12 实测)
+   - model_ready = True, model_error = None, coverage = [44, 44]
 
 4. 前端重构(视觉升级)
    - 设计: Binance Pro/FreqUI (#0b0e14 背景, #0ecb81 涨, #f6465d 跌, #f0b90b 金)
@@ -85,12 +85,14 @@ OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(Ligh
 -------------------------------------------------------------------------------
 - 网关运行: tmux gateway 会话, 127.0.0.1:8321, live 模式 (OKX 直连)
 - mihomo 代理: 7891 运行中 (7890 已恢复)
-- 模型: v44, 44 主流币宇宙正常打分 (coverage [44,44], rank_IC +0.0024)
-- 前端: 重构完成
-- 模拟仓位: 工作正常
+- 模型: v49, 44 主流币宇宙正常打分 (coverage [44,44], rank_IC +0.0012)
+- 止盈止损: ATR 动态模式 (2.95×ATR 止损 / 4.79×ATR 止盈, per-coin 自适应)
+- 前端: 重构完成 (右侧标签式子界面)
+- 模拟仓位: 工作正常 (仅 BUY 信号开仓, 最大 5 仓, 每仓≤20%)
+- 信号更新: 每 2 小时重算一次
 - 网络: 机场节点曾被墙, 现已恢复
-- SMTP: 未启用 (缺环境变量)
-- 旧模型备份: models/archive_v18_15coin/
+- SMTP: 已配置 (smtp_config.json, 163 邮箱, 权限 600)
+- 旧模型备份: models/archive_v18_15coin/, models/archive_v44_fixed/
 
 六、待办事项(重新训练模型扩展币种) — 已完成 2026-08-22
 -------------------------------------------------------------------------------
@@ -107,6 +109,25 @@ OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(Ligh
 7. ✅ 更新网关 TRACKED_COINS(44) / _COIN_CATEGORIES(44) 同步新宇宙
 8. ✅ 重启验证全链路: model_ready=True, coverage [44,44], live 模式 OKX 直连正常
 
+七、ATR 动态止盈止损改造 — 已完成 2026-08-24
+-------------------------------------------------------------------------------
+背景: 原策略止盈止损为固定值 (SL=10%/TP=12%), 无法自适应不同币种波动率。
+
+1. 训练脚本新增 sl_tp_mode 字段 ("fixed" | "atr"):
+   - fixed: 固定百分比 (约束到真实范围 0.5%-6% 止损 / 1%-12% 止盈)
+   - atr: ATR 倍数 (0.5-3×ATR 止损 / 1-5×ATR 止盈, 自适应波动率)
+2. 回测/GA/变异/修复逻辑全部支持 ATR 模式
+3. 修复 strategy_context_features() 缺 atr → OOF 缺 ta_atr_24 (导致 ATR 从未生效)
+4. 迭代: v45(return-fitness 淘汰ATR) → v46(Sharpe-fitness) → v47(OOF含ATR)
+   → v48(约束fixed, ATR入选12/15但倍数5.75×过宽致342x操纵)
+   → v49(收紧ATR到0.5-3×/1-5×, 止损真实触发)
+5. ✅ v49 成果: ATR 模式入选 12/15, stop=2.95×ATR/take=4.79×ATR,
+   stop_hits=69/take_hits=42 (真实触发), WF IR 1.33, 显著性 PASS
+6. ✅ 网关 signals.py 同步: per-coin ATR 动态止盈止损 (回写 ta_atr_24)
+7. ✅ 部署 v49 + 重启验证: 实时信号 per-coin 止盈止损各异
+   (TRX 1.6%/2.6%, BTC 3.0%/4.8%, TIA 10.4%/16.9%)
+
+
 七、关键文件地址速查
 --------------------------------------------------------------------------------
 - 网关主程序:   ./gateway.py
@@ -115,7 +136,7 @@ OKX 永续 API -> mihomo 代理(127.0.0.1:7891) -> LiveFeed -> SignalEngine(Ligh
 - 模拟仓位:     ./paper.py
 - SMTP 提醒:    ./notify.py
 - 前端:         ./static/index.html
-- 模型(v44):    ./models/short_term_ta_ga_model.txt
+- 模型(v49):    ./models/short_term_ta_ga_model.txt
 - 基因:         ./models/best_chromosome.json
 - 模型清单:     ./models/MODEL_MANIFEST.json
 - 旧模型备份:   ./models/archive_v18_15coin/

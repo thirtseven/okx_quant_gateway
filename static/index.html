@@ -925,12 +925,20 @@ async function fetchHealth(){
   }catch(e){}
 }
 async function fetchStrategy(){
-  try{
-    const st=await fetchJSON(API+'/strategy');
-    state.strategy=st;
-    renderStrategy(st);
-  }catch(e){
-    $('strategy-body').innerHTML='<div class="sig-empty">策略数据获取失败</div>';
+  // 重试: 后端启动初期可能未就绪, 最多重试 3 次
+  for(let attempt=0; attempt<3; attempt++){
+    try{
+      const st=await fetchJSON(API+'/strategy');
+      state.strategy=st;
+      renderStrategy(st);
+      return;
+    }catch(e){
+      if(attempt===2){
+        $('strategy-body').innerHTML='<div class="sig-empty">策略数据获取失败</div>';
+      }else{
+        await new Promise(r=>setTimeout(r,800));
+      }
+    }
   }
 }
 async function fetchEquity(){
@@ -1422,6 +1430,30 @@ function syncChartFromState(){
   if(!cache||state.loadingChart||!chart||!chartInit) return;
   const b=state.bars[coin];
   if(!b) return;
+  // live 模式: 直接追加/更新最新 bar (含未完成 bar, 与当前时间一致)
+  if(state.feedMode==='live'){
+    const t=toUnix(b.timestamp);
+    if(t==null) return;
+    const last=chartBars.length?chartBars[chartBars.length-1].time:null;
+    if(last==null||t>=last){
+      chartMode='append';
+      const bar={time:t,open:b.open,high:b.high,low:b.low,close:b.close};
+      const vol={time:t,value:b.volume,color:b.close>=b.open?'rgba(14,203,129,.45)':'rgba(246,70,93,.45)'};
+      if(t===last){
+        chartBars[chartBars.length-1]=bar;
+        chartVols[chartVols.length-1]=vol;
+      }else{
+        chartBars.push(bar);
+        chartVols.push(vol);
+        if(chartBars.length>500){ chartBars.shift();chartVols.shift(); }
+      }
+      candleSeries.update(chartBars[chartBars.length-1]);
+      volumeSeries.update(chartVols[chartVols.length-1]);
+      showChartEmpty(false);
+    }
+    updateChartHead();
+    return;
+  }
   const idx=curIdx(coin);
   if(idx!=null){
     const end=idx+1;
@@ -1542,7 +1574,7 @@ function renderSignals(){
       </div>
       <div class="sig-foot">
         <span>权重 <span class="sig-weight">${((s.weight||0)*100).toFixed(1)}%</span></span>
-        <span>${fmtTime(s.timestamp)}</span>
+        <span>${esc(fmtTime(s.timestamp))}</span>
       </div>
     </div>`;
   }).join('');

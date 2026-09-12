@@ -55,6 +55,7 @@ class Candle:
     close: float
     volume: float
     coin: str
+    confirmed: bool = True  # False=当前未收线 bar (实时展示用, 不进模型)
 
 
 class OKXFeedError(RuntimeError):
@@ -85,6 +86,8 @@ def fetch_okx_candles(inst_id: str, bar: str = "4H", limit: int = 200, coin_labe
     label = coin_label or inst_id
     candles: list[Candle] = []
     for row in payload["data"]:
+        # 保留所有 bar 并标记是否已收线 (confirm=="1"); 未完成 bar 仅用于实时展示
+        confirmed = len(row) >= 9 and row[8] == "1"
         try:
             o, h, l, c, vol = float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])
         except (ValueError, TypeError, IndexError):
@@ -102,6 +105,7 @@ def fetch_okx_candles(inst_id: str, bar: str = "4H", limit: int = 200, coin_labe
                 close=c,
                 volume=vol,
                 coin=label,
+                confirmed=confirmed,
             )
         )
     return list(reversed(candles))
@@ -237,25 +241,29 @@ class LiveFeed:
             out: list[Candle] = []
             for row in rows:
                 if mode == "okx":
-                    # row: [ts(ms), o, h, l, c, vol, ...]
+                    # row: [ts(ms), o, h, l, c, vol, ..., confirm]
+                    confirmed = len(row) >= 9 and str(row[8]) == "1"
                     out.append(
                         Candle(
                             timestamp=pd.Timestamp(int(row[0]), unit="ms", tz="UTC"),
                             open=float(row[1]), high=float(row[2]),
                             low=float(row[3]), close=float(row[4]),
                             volume=float(row[5]), coin=coin,
+                            confirmed=confirmed,
                         )
                     )
                 else:
                     # Gate.io v4 spot candlesticks field order (verified):
                     # [timestamp, quote_volume, close, high, low, open, base_volume, window_close]
                     v = row["value"] if isinstance(row, dict) else row
+                    confirmed = len(v) > 7 and str(v[7]) in ("1", "True", "true")
                     out.append(
                         Candle(
                             timestamp=pd.Timestamp(int(v[0]), unit="s", tz="UTC"),
                             open=float(v[5]), high=float(v[3]),
                             low=float(v[4]), close=float(v[2]),
                             volume=float(v[6]), coin=coin,
+                            confirmed=confirmed,
                         )
                     )
             return out
@@ -311,17 +319,19 @@ class LiveFeed:
                     continue
                 self.last_error = None
                 self.source = used
+                # history_cache 只存已收线 bar (喂模型, 特征稳定); 未完成 bar 仅用于实时展示
+                confirmed = [c for c in candles if c.confirmed]
                 frame = pd.DataFrame(
                     {
-                        "timestamp": [c.timestamp for c in candles],
-                        "open": [c.open for c in candles],
-                        "high": [c.high for c in candles],
-                        "low": [c.low for c in candles],
-                        "close": [c.close for c in candles],
-                        "volume": [c.volume for c in candles],
-                        "coin": [c.coin for c in candles],
+                        "timestamp": [c.timestamp for c in confirmed],
+                        "open": [c.open for c in confirmed],
+                        "high": [c.high for c in confirmed],
+                        "low": [c.low for c in confirmed],
+                        "close": [c.close for c in confirmed],
+                        "volume": [c.volume for c in confirmed],
+                        "coin": [c.coin for c in confirmed],
                     }
-                )
+                ) if confirmed else pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "coin"])
                 if fill_history:
                     self.history_cache[coin] = frame
                 elif coin in self.history_cache:
@@ -330,7 +340,7 @@ class LiveFeed:
                     self.history_cache[coin] = pd.concat([merged, frame]).sort_values("timestamp").reset_index(drop=True).iloc[-200:]
                 else:
                     self.history_cache[coin] = frame
-                latest[coin] = candles[-1]
+                latest[coin] = candles[-1]  # 最新 bar (含未完成, 实时展示)
         if failures:
             self.last_error = f"{failures}/{len(self.coin_list)} coins failed this cycle"
         if not latest:
@@ -338,18 +348,18 @@ class LiveFeed:
         return latest
 
     def history(self, coin: str, n: int = 200) -> pd.DataFrame:
-        if coin not in self.history_cache:
+        if coin not in self.history_cache or self.history_cache[coin].empty:
             candles, _ = self._fetch(coin, limit=n)
-            candles.sort(key=lambda c: c.timestamp)
+            confirmed = [c for c in candles if c.confirmed]
             self.history_cache[coin] = pd.DataFrame(
                 {
-                    "timestamp": [c.timestamp for c in candles],
-                    "open": [c.open for c in candles],
-                    "high": [c.high for c in candles],
-                    "low": [c.low for c in candles],
-                    "close": [c.close for c in candles],
-                    "volume": [c.volume for c in candles],
-                    "coin": [c.coin for c in candles],
+                    "timestamp": [c.timestamp for c in confirmed],
+                    "open": [c.open for c in confirmed],
+                    "high": [c.high for c in confirmed],
+                    "low": [c.low for c in confirmed],
+                    "close": [c.close for c in confirmed],
+                    "volume": [c.volume for c in confirmed],
+                    "coin": [c.coin for c in confirmed],
                 }
             )
         frame = self.history_cache[coin]
