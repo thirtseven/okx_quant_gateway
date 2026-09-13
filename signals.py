@@ -307,6 +307,8 @@ class SignalEngine:
                 return {}
             feats = {coin: f.copy() for coin, f in trimmed.items()}
             _V18.add_base_features(feats)
+            _V18.add_micro_features(feats)
+            _V18.add_cross_sectional_features(feats)
             self._compute_ta_features(feats)
             probs: dict[str, float] = {}
             for coin, f in feats.items():
