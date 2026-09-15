@@ -71,7 +71,7 @@ class SignalEngine:
         self._coin_categories: list[str] = []
         # 信号去抖: coin -> deque of recent raw BUY/HOLD flags (1=BUY)
         self._sig_buf: dict[str, list[int]] = {}
-        self._debounce_k: int = 3   # 连续 N 根一致才确认
+        self._debounce_k: int = 2   # 连续 N 根一致才确认 (2 次重算 = 4h, 更快响应)
         self._last_sig_state: dict[str, bool] = {}
         # 模型概率 EMA 平滑 (减少 cross-sectional 排名抖动)
         self._smooth_probs: dict[str, float] = {}
