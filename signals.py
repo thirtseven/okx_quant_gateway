@@ -337,6 +337,7 @@ class SignalEngine:
                 for col in confirm_cols:
                     self._writeback(frame, f, col)
                 self._writeback(frame, f, "base_ret_24")
+                self._writeback(frame, f, "base_ret_48")
                 # ATR 回写: 供 ATR 动态止盈止损使用 (缺失则退化为固定 0.02)
                 self._writeback(frame, f, "ta_atr_24")
             return smoothed
@@ -425,12 +426,16 @@ class SignalEngine:
         if mode == "trend_following":
             adx_w = max(6, cw)
             adx_col = f"ta_adx_{adx_w}"
-            if adx_col not in frame.columns or "base_ret_24" not in frame.columns:
+            if adx_col not in frame.columns or "base_ret_24" not in frame.columns or "base_ret_48" not in frame.columns:
                 return False
             row = frame.iloc[-1]
-            if pd.isna(row.get(adx_col)) or pd.isna(row.get("base_ret_24")):
+            if pd.isna(row.get(adx_col)) or pd.isna(row.get("base_ret_24")) or pd.isna(row.get("base_ret_48")):
                 return False
-            return float(row[adx_col]) >= 0.20 and float(row["base_ret_24"]) * direction > 0.0
+            return (
+                float(row[adx_col]) >= 0.20
+                and float(row["base_ret_24"]) * direction > 0.0
+                and float(row["base_ret_48"]) * direction > 0.0
+            )
         if mode == "turtle_breakout":
             col = f"ta_donchian_{cw}"
             if col not in frame.columns:
