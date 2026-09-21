@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quant-gateway-config
+data:
+  config.json: |
+    {
+      "proxy_url": "http://127.0.0.1:7891",
+      "okx_api": "https://www.okx.com/api/v5/market/candles",
+      "gateway_port": 8321
+    }

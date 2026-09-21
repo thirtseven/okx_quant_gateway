@@ -1,0 +1,54 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "title": "模型就绪",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "quant_model_ready", "refId": "A"}],
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0}
+    },
+    {
+      "title": "数据线程存活",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "quant_feed_alive", "refId": "A"}],
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0}
+    },
+    {
+      "title": "跟踪币种数",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "quant_coins", "refId": "A"}],
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0}
+    },
+    {
+      "title": "运行时长",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "quant_uptime_seconds", "refId": "A"}],
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0}
+    },
+    {
+      "title": "数据新鲜度 (秒)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "quant_data_age_seconds", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+    },
+    {
+      "title": "信号数 (按类型)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [{"expr": "sum(rate(quant_signals_total[5m])) by (signal)", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["quant"],
+  "title": "Quant Gateway",
+  "uid": "quant-gateway",
+  "version": 1
+}

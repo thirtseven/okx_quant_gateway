@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quant-gateway
+  labels:
+    app: quant-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quant-gateway
+  template:
+    metadata:
+      labels:
+        app: quant-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: quant-gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8321
+          env:
+            - name: QUANT_V18_SOURCE
+              value: /app/v18_source.py
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8321
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8321
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: quant-gateway-config

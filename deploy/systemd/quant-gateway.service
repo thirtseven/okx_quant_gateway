@@ -1,0 +1,18 @@
+[Unit]
+Description=Quant Trader Gateway (FastAPI + LightGBM)
+After=network.target
+
+[Service]
+Type=simple
+User=thirty
+WorkingDirectory=/home/thirty/quant-trader
+ExecStart=/usr/bin/python3 -m uvicorn gateway:app --host 127.0.0.1 --port 8321
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+# 日志交给 journald + logrotate
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

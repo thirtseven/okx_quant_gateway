@@ -1,0 +1,11 @@
+# 量化网关定时任务
+# 安装: crontab deploy/cron/quant-gateway-cron
+
+# 每天 00:30 刷新本地数据 (从网关拉取最新 K 线)
+30 0 * * * cd /home/thirty/quant-local && python3 refresh_from_gateway.py >> /tmp/quant-refresh.log 2>&1
+
+# 每周日 02:00 运行回测验证 (检查策略健康)
+0 2 * * 0 cd /home/thirty/quant-local && python3 backtest_deployed.py >> /tmp/quant-backtest.log 2>&1
+
+# 每天 08:00 清理过期日志
+0 8 * * * find /tmp -name "quant-*.log*" -mtime +7 -delete 2>/dev/null

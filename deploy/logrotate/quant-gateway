@@ -1,0 +1,22 @@
+# 量化网关日志轮转
+# 安装: sudo cp deploy/logrotate/quant-gateway /etc/logrotate.d/quant-gateway
+/tmp/quant-gateway.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0644 thirty thirty
+}
+
+# journald 日志 (systemd 部署时)
+/var/log/journal/*/*.journal {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

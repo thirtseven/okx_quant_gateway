@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 _PROJ_ROOT: Path = Path(__file__).resolve().parent
-V18_SOURCE: Path = Path(os.environ.get("QUANT_V18_SOURCE") or str(_PROJ_ROOT / ".." / "quant-local" / "short_term_ta_ga_local.py"))
+V18_SOURCE: Path = Path(os.environ.get("QUANT_V18_SOURCE") or str(_PROJ_ROOT / "v18_source.py"))
 BEST_JSON: Path = Path(os.environ.get("QUANT_BEST_JSON") or str(_PROJ_ROOT / "models" / "best_chromosome.json"))
 MODEL_FILE: Path = Path(os.environ.get("QUANT_MODEL_FILE") or str(_PROJ_ROOT / "models" / "short_term_ta_ga_model.txt"))
 

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 from data_feed import LiveFeed
 from notify import clear_error_state, configure as smtp_configure
@@ -57,6 +58,30 @@ async def lifespan(app: FastAPI) -> object:
 
 
 app = FastAPI(title="Quant Trader Gateway", version="0.1.0", lifespan=lifespan)
+
+# ---- Prometheus 指标 ----
+METRIC_SIGNALS = Counter("quant_signals_total", "信号总数", ["signal"])
+METRIC_MODEL_READY = Gauge("quant_model_ready", "模型就绪状态")
+METRIC_FEED_ALIVE = Gauge("quant_feed_alive", "数据线程存活")
+METRIC_DATA_AGE = Gauge("quant_data_age_seconds", "数据新鲜度(秒)")
+METRIC_COINS = Gauge("quant_coins", "跟踪币种数")
+METRIC_UPTIME = Gauge("quant_uptime_seconds", "运行时长(秒)")
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """Prometheus 指标端点."""
+    with _lock:
+        updated_at = _latest_state["updated_at"]
+    data_age = None if updated_at is None else time.time() - updated_at
+    METRIC_MODEL_READY.set(1 if engine._model_ready else 0)
+    METRIC_FEED_ALIVE.set(1 if (_feed_thread is not None and _feed_thread.is_alive()) else 0)
+    METRIC_DATA_AGE.set(data_age if data_age is not None else -1)
+    METRIC_COINS.set(len(live_feed.coins))
+    METRIC_UPTIME.set(round(time.time() - _start_time, 1))
+    for s in _latest_state.get("signals") or []:
+        METRIC_SIGNALS.labels(signal=s.get("signal", "HOLD")).inc()
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 def _err(code: str, message: str, status: int) -> JSONResponse:
