@@ -18,11 +18,14 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
 import numpy as np
 import pandas as pd
+
+from config import BASE_DIR
 
 KDJ_N: int = 9
 KDJ_M1: int = 3
@@ -90,6 +93,22 @@ class Scanner:
         self._last_error: str | None = None
         self._notified: set[str] = set()
         self._btc_uptrend_ok: bool = False
+        self._state_file = BASE_DIR / "scanner_state.json"
+        self._load_state()
+
+    def _load_state(self) -> None:
+        try:
+            if self._state_file.exists():
+                payload = json.loads(self._state_file.read_text(encoding="utf-8"))
+                self.enabled = bool(payload.get("enabled", True))
+        except Exception:
+            pass
+
+    def _save_state(self) -> None:
+        try:
+            self._state_file.write_text(json.dumps({"enabled": self.enabled}), encoding="utf-8")
+        except Exception:
+            pass
 
     def _btc_uptrend(self, frame: pd.DataFrame | None) -> bool:
         """BTC 4H 上涨趋势过滤: RSI(12)∈(30,70) 且 DIF>0 且 KDJ 非死叉 且 价>EMA20/EMA50."""

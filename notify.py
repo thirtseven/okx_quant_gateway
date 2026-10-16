@@ -32,7 +32,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CONFIG_FILE: Path = Path(os.environ.get("SMTP_CONFIG_FILE") or str(Path(__file__).resolve().parent / "smtp_config.json"))
+from config import BASE_DIR
+
+CONFIG_FILE: Path = Path(os.environ.get("SMTP_CONFIG_FILE") or str(BASE_DIR / "smtp_config.json"))
 
 # ---- 配置 (环境变量为初值, configure() 可热更新) ----
 _SMTP_SENDER = os.environ.get("SMTP_SENDER")

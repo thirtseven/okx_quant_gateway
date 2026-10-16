@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 from data_feed import LiveFeed
+from config import load as load_config, save as save_config
 from notify import clear_error_state, configure as smtp_configure
 from notify import get_config as smtp_get_config
 from notify import notify_error, notify_scanner, notify_signal, test_send as smtp_test_send
@@ -290,6 +291,34 @@ def coins() -> dict:
     return {"coins": list(live_feed.coins)}
 
 
+@app.get("/api/network")
+def network_config() -> dict:
+    """当前网络配置 (代理 URL / OKX API URL / 端口)."""
+    return load_config()
+
+
+@app.post("/api/network")
+def network_save(payload: dict | None = None) -> dict:
+    """保存网络配置 (proxy_url / okx_api / gateway_port)."""
+    return save_config(payload or {})
+
+
+@app.post("/api/network/test")
+def network_test(payload: dict | None = None) -> dict:
+    """测试指定 URL 连通性 (可带代理)."""
+    payload = payload or {}
+    url = str(payload.get("url") or "").strip()
+    proxy = str(payload.get("proxy_url") or load_config()["proxy_url"]).strip()
+    if not url:
+        return {"ok": False, "message": "URL 不能为空"}
+    try:
+        import requests
+        r = requests.get(url, proxies={"http": proxy, "https": proxy}, timeout=10)
+        return {"ok": r.status_code < 400, "status": r.status_code, "message": f"HTTP {r.status_code}"}
+    except Exception as exc:
+        return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
+
+
 @app.get("/api/scanner")
 def scanner_state() -> dict:
     """独立扫描器当前状态 (启用开关 + 最近一次扫描结果)."""
@@ -302,6 +331,7 @@ def scanner_toggle(payload: dict | None = None) -> dict:
     payload = payload or {}
     if "enabled" in payload:
         scanner.enabled = bool(payload["enabled"])
+        scanner._save_state()
     if payload.get("reset_notified"):
         scanner.reset_notified()
     return scanner.summary()

@@ -6,9 +6,13 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from config import BASE_DIR
 
 
 @dataclass
@@ -42,6 +46,33 @@ class PaperTrader:
         self.positions: dict[str, Position] = {}
         self.closed_trades: list[ClosedTrade] = []
         self._lock = threading.Lock()
+        self._state_file = BASE_DIR / "paper_state.json"
+        self._load()
+
+    def _save(self) -> None:
+        """持久化仓位/成交/资金 (EXE 模式下写入 EXE 目录)."""
+        try:
+            payload = {
+                "cash": self.cash,
+                "positions": {c: asdict(p) for c, p in self.positions.items()},
+                "closed_trades": [asdict(t) for t in self.closed_trades],
+            }
+            self._state_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load(self) -> None:
+        if not self._state_file.exists():
+            return
+        try:
+            payload = json.loads(self._state_file.read_text(encoding="utf-8"))
+            self.cash = float(payload.get("cash", self.INITIAL_CAPITAL))
+            self.positions = {
+                c: Position(**p) for c, p in (payload.get("positions") or {}).items()
+            }
+            self.closed_trades = [ClosedTrade(**t) for t in (payload.get("closed_trades") or [])]
+        except Exception:
+            pass
 
     def _now(self) -> str:
         return time.strftime("%Y-%m-%d %H:%M:%S")
@@ -159,6 +190,7 @@ class PaperTrader:
                             entry_ts=pos.entry_ts,
                             weight=target_val / self.initial_capital,
                         )
+            self._save()
 
     def summary(self, prices: dict[str, float] | None = None) -> dict:
         """持仓 + 实现盈亏 + 浮动盈亏 + 总权益."""
@@ -208,4 +240,5 @@ class PaperTrader:
             self.cash = self.INITIAL_CAPITAL
             self.positions = {}
             self.closed_trades = []
+            self._save()
         return self.summary()
