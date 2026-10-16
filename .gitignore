@@ -27,3 +27,9 @@ models/archive_v44_fixed/
 .DS_Store
 package.json
 package-lock.json
+
+# ---- 运行时状态 (EXE/网关生成, 不提交) ----
+paper_state.json
+scanner_state.json
+config.json
+smtp_config.json
