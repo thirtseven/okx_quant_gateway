@@ -172,9 +172,9 @@ def _create_smtp() -> tuple[smtplib.SMTP | None, str | None]:
     """建立 SMTP 连接 (SSL or STARTTLS)."""
     try:
         if _SMTP_PORT == 465:
-            conn = smtplib.SMTP_SSL(_SMTP_HOST, _SMTP_PORT, timeout=10)
+            conn = smtplib.SMTP_SSL(_SMTP_HOST, _SMTP_PORT, timeout=20)
         else:
-            conn = smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=10)
+            conn = smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=20)
             conn.starttls()
         conn.login(_SMTP_SENDER, _SMTP_AUTH_CODE)
         logger.info("[SMTP] Connected to %s:%s", _SMTP_HOST, _SMTP_PORT)
@@ -217,26 +217,33 @@ def _reset_connection() -> None:
 
 
 def send_alert(subject: str, body: str) -> bool:
-    """发送一封通用告警邮件. 返回是否成功."""
+    """发送一封通用告警邮件 (连接/发送失败自动重试一次, 应对首次连接瞬时失败)."""
     if not is_configured():
         return False
-    conn = _get_or_create()
-    if conn is None:
-        logger.warning("[SMTP] No connection: %s", _SMTP_LAST_ERROR)
-        return False
-    try:
-        msg = MIMEText(body, "plain", "utf-8")
-        msg["Subject"] = Header(subject, "utf-8")
-        msg["From"] = formataddr((str(_SMTP_SENDER.split("@")[0]), _SMTP_SENDER))
-        msg["To"] = ", ".join(_to_list())
-        with _SMTP_SEND_LOCK:
-            conn.sendmail(_SMTP_SENDER, _to_list(), msg.as_string())
-        logger.info("[SMTP] Sent alert to %s", _to_list())
-        return True
-    except Exception as exc:
-        logger.error("[SMTP] Send failed: %s", exc)
-        _reset_connection()
-        return False
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = formataddr((str(_SMTP_SENDER.split("@")[0]), _SMTP_SENDER))
+    msg["To"] = ", ".join(_to_list())
+    last_err: str | None = None
+    for attempt in range(2):
+        conn = _get_or_create()
+        if conn is None:
+            last_err = _SMTP_LAST_ERROR
+            logger.warning("[SMTP] No connection (attempt %d): %s", attempt + 1, last_err)
+        else:
+            try:
+                with _SMTP_SEND_LOCK:
+                    conn.sendmail(_SMTP_SENDER, _to_list(), msg.as_string())
+                logger.info("[SMTP] Sent alert to %s", _to_list())
+                return True
+            except Exception as exc:
+                last_err = str(exc)
+                logger.error("[SMTP] Send failed (attempt %d): %s", attempt + 1, exc)
+                _reset_connection()
+        if attempt == 0:
+            time.sleep(1.5)
+    logger.warning("[SMTP] Send failed after retries: %s", last_err)
+    return False
 
 
 def notify_signal(signals: list[dict], source: str | None = None) -> bool:
